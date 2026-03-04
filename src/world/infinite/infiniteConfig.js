@@ -6,6 +6,7 @@ export const defaultInfiniteConfig = {
   chunkSize: 64,
   marginChunks: 1,
   maxGenPerFrame: 1,
+  chunkCacheLimit: 48, // лимит кеша выгруженных чанков (LRU)
 
   // Цель: доля суши (level > 0) ~ 0.62
   landFraction: 0.62,
