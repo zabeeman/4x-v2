@@ -1,5 +1,6 @@
 // src/world/game/sim/defaultGameData.js
 import { StatId } from './statsSystem.js';
+import { BUILDINGS as BUILDING_DEFINITIONS } from './buildingCatalog.js';
 
 export function createDefaultGameData(gameCfg) {
   const disallowSurfacesArray = Array.from(gameCfg?.building?.disallowSurfaces ?? []);
@@ -349,5 +350,5 @@ export function createDefaultGameData(gameCfg) {
     },
   ];
 
-  return { balance, buildings, governments, doctrines, presets };
+  return { balance, buildings, buildingDefinitions: BUILDING_DEFINITIONS, governments, doctrines, presets };
 }
