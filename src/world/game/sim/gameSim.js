@@ -158,7 +158,6 @@ export class GameSim {
     if (existingIdx >= 0) list[existingIdx] = zoneSource;
     else list.push(zoneSource);
     this.state.zoneSourcesByCity.set(cityId, list);
-    console.log("AddZoneSource", cityId, building.id, zoneSource.radius, zoneSource.priority, zoneSource.tiles.length);
 
     this.rebuildCityZones(cityId);
   }
@@ -173,7 +172,6 @@ export class GameSim {
       for (const key of tiles) union.add(key);
     }
     this.state.cityBuildZoneTiles.set(cityId, union);
-    console.log("CityBuildZoneTiles size", cityId, union.size);
     return union;
   }
 
@@ -222,9 +220,6 @@ export class GameSim {
     return { first, second };
   }
 
-  _isDisputed() {
-    return false;
-  }
 
   _citiesCoveringTile(tx, ty) {
     const out = [];

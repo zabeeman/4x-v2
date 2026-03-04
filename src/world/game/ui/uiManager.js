@@ -206,7 +206,6 @@ export class UIManager {
       const buildingId = btn.getAttribute("data-building-id");
       if (!buildingId) return;
       this.setSelectedBuilding(buildingId);
-      console.log("UI select", buildingId, this.selectedBuildingId);
       this.onPickBuilding?.(buildingId);
     });
 
@@ -337,7 +336,6 @@ export class UIManager {
     }
 
     const allDefs = catalogue ?? [];
-    console.log(`[UI] Building catalogue loaded: count=${allDefs.length}, ids=${allDefs.map((b) => b.id).join(',')}`);
 
     this._renderCategoryTabs();
     this._renderBuildingCards();
