@@ -49,12 +49,7 @@ export class BuildManager {
     if (!def || !this.sim?.validatePlacement) {
       return { ok: false, affordabilityOk: true, reasons: [{ code: 'NO_SIM' }], cityId: null, footprint: [{ tx, ty }] };
     }
-
-    let res = this.sim.validatePlacement(def, tx, ty, this.sim.state);
-    if (!res?.ok && res?.reasons?.[0]?.code === 'UNKNOWN_BUILDING') {
-      res = this.sim.validatePlacement(def.id, tx, ty);
-    }
-    return res;
+    return this.sim.validatePlacement(def.id, tx, ty);
   }
 
   updateGhost(seed, worldX, worldY) {
@@ -101,48 +96,12 @@ export class BuildManager {
 
     if (this.sim && !chk.affordabilityOk) return null;
 
-    // Place in sim state (new placement flow).
+    // Place in sim state through the single source of truth.
     let placed = null;
     if (this.sim) {
-      const infinite = this.sim.isInfiniteResources?.() ?? this.sim.state?.cheats?.infiniteResources;
-      if (!infinite) this.sim.spendCost?.(type.id);
-
-      placed = {
-        id: `${type.id}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
-        typeId: type.id,
-        tx,
-        ty,
-        cityId: chk.cityId ?? null,
-        buildProgress: 0,
-        completed: false,
-      };
-
-      if (!Array.isArray(this.sim.state.buildings)) this.sim.state.buildings = [];
-      this.sim.state.buildings.push(placed);
-
-      const city = placed.cityId ? this.sim.getCityById?.(placed.cityId) : null;
-      if (city) {
-        if (!Array.isArray(city.buildings)) city.buildings = [];
-        city.buildings.push(placed);
-      }
-
-      if (type.buildZone?.addsBuildZone) {
-        if (!this.sim.state.buildZone) this.sim.state.buildZone = {};
-        if (!Array.isArray(this.sim.state.buildZone.sources)) this.sim.state.buildZone.sources = [];
-        this.sim.state.buildZone.sources.push({
-          buildingId: placed.id,
-          cityId: placed.cityId,
-          tx,
-          ty,
-          shape: type.buildZone.zoneShape ?? 'TILE_DISK',
-          radius: type.buildZone.zoneRadiusTiles ?? 0,
-          priority: type.buildZone.zonePriority ?? 0,
-        });
-      }
-
-      this.sim.rebuildCityZones?.();
-      this.sim.recomputeDerived?.();
-      this.sim._bump?.();
+      const res = this.sim.placeBuilding(type.id, tx, ty);
+      if (!res?.ok) return null;
+      placed = res.building;
     }
 
     // Visual

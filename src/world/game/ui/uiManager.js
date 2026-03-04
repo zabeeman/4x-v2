@@ -2,6 +2,7 @@
 // DOM-based UI overlay (not affected by camera zoom).
 
 import { localizePlacementReason } from '../sim/reasonCodes.js';
+import { CATEGORIES as BUILDING_CATEGORIES } from '../sim/categories.js';
 
 function el(tag, cls, parent) {
   const e = document.createElement(tag);
@@ -10,15 +11,7 @@ function el(tag, cls, parent) {
   return e;
 }
 
-const CATEGORY_ORDER = [
-  'GOVERNANCE',
-  'RESIDENTIAL',
-  'ECONOMY',
-  'INDUSTRY',
-  'MILITARY',
-  'SCIENCE',
-  'INFRASTRUCTURE',
-];
+const CATEGORY_ORDER = [...BUILDING_CATEGORIES];
 
 export class UIManager {
   constructor(scene, _infiniteCfg, gameCfg) {
@@ -321,10 +314,18 @@ export class UIManager {
       if (!this.enabledById.has(b.id)) this.enabledById.set(b.id, true);
     }
 
+    for (const [cat, items] of this.buildingsByCategory.entries()) {
+      items.sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0) || String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), 'ru'));
+      this.buildingsByCategory.set(cat, items);
+    }
+
     const firstCategory = CATEGORY_ORDER.find((c) => (this.buildingsByCategory.get(c)?.length ?? 0) > 0) ?? CATEGORY_ORDER[0];
     if (!this.currentCategory || !this.buildingsByCategory.has(this.currentCategory)) {
       this.currentCategory = firstCategory;
     }
+
+    const allDefs = catalogue ?? [];
+    console.log(`[UI] Building catalogue loaded: count=${allDefs.length}, ids=${allDefs.map((b) => b.id).join(',')}`);
 
     this._renderCategoryTabs();
     this._renderBuildingCards();
@@ -399,34 +400,18 @@ export class UIManager {
   }
 
   _prettyCategory(category) {
-    const map = {
-      GOVERNANCE: 'Управление',
-      RESIDENTIAL: 'Жильё',
-      ECONOMY: 'Экономика',
-      INDUSTRY: 'Промышленность',
-      MILITARY: 'Армия',
-      SCIENCE: 'Наука',
-      INFRASTRUCTURE: 'Инфраструктура',
-    };
-    return map[category] ?? String(category ?? 'Другое').replaceAll('_', ' ').toUpperCase();
+    return String(category ?? 'Другое');
   }
 
   _inferCategory(def) {
-    if (!def) return 'INFRASTRUCTURE';
+    if (!def) return CATEGORY_ORDER[0] ?? 'Управление';
     if (def.category) return def.category;
-    const id = String(def.id ?? '').toLowerCase();
-    if (def.isStarter || def.isHub || id.includes('hall')) return 'GOVERNANCE';
-    if (def.extract) return 'INDUSTRY';
-    if (id.includes('house') || id.includes('res')) return 'RESIDENTIAL';
-    if (id.includes('academy') || id.includes('science')) return 'SCIENCE';
-    if (id.includes('bank') || id.includes('trade')) return 'ECONOMY';
-    if (id.includes('barrack') || id.includes('fort') || id.includes('tower')) return 'MILITARY';
-    return 'INFRASTRUCTURE';
+    return CATEGORY_ORDER[0] ?? 'Управление';
   }
 
   _buildCostText(def) {
     const icon = { gold: '🪙', wood: '🪵', metal: '⛓️', marble: '🧱', glass: '🔷', powder: '💥', research: '📘' };
-    const parts = Object.entries(def?.cost ?? {})
+    const parts = Object.entries(def?.buildCost ?? def?.cost ?? {})
       .filter(([, v]) => Number(v) > 0)
       .map(([k, v]) => `${icon[k] ?? '•'} ${k}:${v}`);
     return `Стоимость: ${parts.join('  ') || 'бесплатно'}`;
