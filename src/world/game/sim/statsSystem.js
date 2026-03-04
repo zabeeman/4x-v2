@@ -1,4 +1,5 @@
 // src/world/game/sim/statsSystem.js
+import { applyEffects, collectActiveEffects, stackEffects } from './effectEngine.js';
 
 export const StatId = {
   GoldPerMinPct: 'GoldPerMinPct',
@@ -25,6 +26,14 @@ export const StatId = {
 
 export function createBaseStats() {
   return {
+    IncomeGoldPerMin: 0,
+    PopCap: 10,
+    Happiness: 1,
+    Corruption: 0,
+    Crime: 0,
+    TradeCapacity: 1,
+    BuildSpeedMul: 1,
+    RecruitSpeedMul: 1,
     pct: {
       [StatId.GoldPerMinPct]: 1,
       [StatId.HappinessPct]: 1,
@@ -58,7 +67,6 @@ function ensureBreakdown(stats, statKey) {
 }
 
 export function applyMod(stats, mod, sourceLabel) {
-  // mod: { stat, type: 'AddPct'|'Mul'|'AddFlat', value }
   if (!mod || !mod.stat) return;
   const s = mod.stat;
 
@@ -68,51 +76,53 @@ export function applyMod(stats, mod, sourceLabel) {
     return;
   }
 
-  // pct
   stats.pct[s] = stats.pct[s] ?? 1;
   if (mod.type === 'Mul') {
     stats.pct[s] *= mod.value;
   } else {
-    // AddPct
     stats.pct[s] *= (1 + mod.value);
   }
   ensureBreakdown(stats, s).push({ source: sourceLabel, type: mod.type, value: mod.value });
 }
 
+function syncLegacyAliases(stats) {
+  stats.flat[StatId.PopCap] = stats.PopCap;
+  stats.flat[StatId.Corruption] = stats.Corruption;
+  stats.flat[StatId.TradeSlots] = stats.TradeCapacity;
+  stats.pct[StatId.BuildSpeedPct] = stats.BuildSpeedMul;
+  stats.pct[StatId.TrainSpeedPct] = stats.RecruitSpeedMul;
+  stats.pct[StatId.HappinessPct] = stats.Happiness;
+}
+
 export function computeCityStats(gameData, city, state) {
   const stats = createBaseStats();
 
-  // Government mods (global)
-  const gov = gameData.governments.find(g => g.id === state.governmentId);
+  const gov = gameData.governments.find((g) => g.id === state.governmentId);
   if (gov?.mods) {
     for (const m of gov.mods) applyMod(stats, m, `Gov:${gov.id}`);
   }
 
-  // Doctrines (global)
   for (const dId of state.selectedDoctrines) {
-    const d = gameData.doctrines.find(x => x.id === dId);
+    const d = gameData.doctrines.find((x) => x.id === dId);
     if (!d) continue;
     if (d.mods) for (const m of d.mods) applyMod(stats, m, `Doc:${d.id}`);
   }
 
-  // Hub level scaling (simple per-building count)
   const hub = city.hub;
   if (hub) {
     const perLevel = gameData.balance.centerMainStatAddPctPerLevel ?? 0.0075;
     const mainStats = gameData.balance.mainPctStats ?? Object.keys(stats.pct);
     for (let lvl = 0; lvl < (hub.level ?? 1); lvl++) {
       for (const sid of mainStats) {
-        applyMod(stats, { stat: sid, type: 'AddPct', value: perLevel }, `Hub:${hub.typeId}@${lvl+1}`);
+        applyMod(stats, { stat: sid, type: 'AddPct', value: perLevel }, `Hub:${hub.typeId}@${lvl + 1}`);
       }
     }
   }
 
-  // Buildings mods (city-local)
-  for (const b of city.buildings) {
-    const def = gameData.buildings.find(x => x.id === b.typeId);
-    if (!def?.mods) continue;
-    for (const m of def.mods) applyMod(stats, m, `Bld:${def.id}`);
-  }
+  const cityEffects = collectActiveEffects({ ...state, gameData }, city.id);
+  const stackedEffects = stackEffects(cityEffects);
+  const afterEffects = applyEffects(stats, stackedEffects);
 
-  return stats;
+  syncLegacyAliases(afterEffects);
+  return afterEffects;
 }
