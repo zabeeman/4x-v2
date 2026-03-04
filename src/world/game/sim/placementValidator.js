@@ -2,16 +2,47 @@ import { PlacementReasonCode } from './reasonCodes.js';
 import { getSurfaceAt, getResourceNodeAt, isCoastAt } from './geoQueries.js';
 
 function normalizeRules(def) {
-  if (def?.placementRules) return def.placementRules;
+  if (def?.placementRules) {
+    // Legacy extractor behavior: any non-water surface, up to 100 tiles from build zone,
+    // and only on tiles with matching resource nodes.
+    if (def.extract) {
+      const r = def.placementRules;
+      const forbidden = new Set(r.forbiddenSurfaces ?? []);
+      forbidden.add('water');
+      forbidden.add('shallow_water');
+      forbidden.add('deep_water');
+      return {
+        ...r,
+        mustBeInsideBuildZone: false,
+        canBeOutsideBuildZone: true,
+        maxDistanceToBuildZone: 100,
+        allowedSurfaces: null,
+        forbiddenSurfaces: Array.from(forbidden),
+        requiresResourceNode: {
+          ...(r.requiresResourceNode ?? {}),
+          // For extractors always trust canonical extract resource id.
+          type: String(def.extract.resource).toLowerCase(),
+        },
+      };
+    }
+    return def.placementRules;
+  }
 
   const pr = def?.placeRules ?? {};
+  const isExtractor = !!def?.extract;
+  const forbiddenSurfaces = new Set();
+  if (isExtractor) {
+    forbiddenSurfaces.add('water');
+    forbiddenSurfaces.add('shallow_water');
+    forbiddenSurfaces.add('deep_water');
+  }
   return {
-    allowedSurfaces: pr.allowAnySurface ? null : (pr.allowedSurfaces ?? null),
-    forbiddenSurfaces: null,
-    mustBeInsideBuildZone: !(def?.isStarter || def?.isHub),
-    canBeOutsideBuildZone: typeof pr.allowOutsideBuildAreaWithinTiles === 'number',
-    maxDistanceToBuildZone: pr.allowOutsideBuildAreaWithinTiles ?? 0,
-    requiresResourceNode: def?.extract?.resource ? { type: def.extract.resource } : null,
+    allowedSurfaces: (pr.allowAnySurface || isExtractor) ? null : (pr.allowedSurfaces ?? null),
+    forbiddenSurfaces: forbiddenSurfaces.size > 0 ? Array.from(forbiddenSurfaces) : null,
+    mustBeInsideBuildZone: isExtractor ? false : !(def?.isStarter || def?.isHub),
+    canBeOutsideBuildZone: isExtractor ? true : typeof pr.allowOutsideBuildAreaWithinTiles === 'number',
+    maxDistanceToBuildZone: isExtractor ? 100 : (pr.allowOutsideBuildAreaWithinTiles ?? 0),
+    requiresResourceNode: def?.extract?.resource ? { type: String(def.extract.resource).toLowerCase() } : null,
     requiresCoast: false,
     limit: {
       perCity: null,
