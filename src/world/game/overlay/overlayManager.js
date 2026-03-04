@@ -475,9 +475,14 @@ export class OverlayManager {
     const startGX = chunk.cx * this.chunkSize;
     const startGY = chunk.cy * this.chunkSize;
 
-    // Green fill for valid placement.
+    const def = this.sim?.getBuildingDef?.(this.placementTypeId);
+    const isExtractor = !!def?.extract;
+
+    // Green fill for regular buildings, purple for extractor availability zones.
     const okAlpha = 0.22;
-    ctx.fillStyle = `rgba(60, 220, 120, ${okAlpha})`;
+    ctx.fillStyle = isExtractor
+      ? `rgba(171, 71, 188, ${okAlpha})`
+      : `rgba(60, 220, 120, ${okAlpha})`;
 
     for (let ly = 0; ly < this.chunkSize; ly++) {
       for (let lx = 0; lx < this.chunkSize; lx++) {
