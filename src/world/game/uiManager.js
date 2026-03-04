@@ -294,10 +294,16 @@ export class UIManager {
   setDemolishToggleHandler(fn) {
     if (!this.btnDemolish) return;
     this.btnDemolish.onclick = () => {
-      this.demolishActive = !this.demolishActive;
-      this.btnDemolish.textContent = this.demolishActive ? 'Снос: вкл' : 'Снос: выкл';
+      this.setDemolishActive(!this.demolishActive);
       fn(this.demolishActive);
     };
+  }
+
+  setDemolishActive(active) {
+    this.demolishActive = !!active;
+    if (this.btnDemolish) {
+      this.btnDemolish.textContent = this.demolishActive ? 'Снос: вкл' : 'Снос: выкл';
+    }
   }
 
   setInfiniteResourcesHandler(fn) {

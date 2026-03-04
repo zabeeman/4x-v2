@@ -269,9 +269,9 @@ export class Start extends Phaser.Scene {
       }
 
       if (this.demolishMode) {
-        // turn off demolish
+        // turn off demolish and sync UI state
         this.demolishMode = false;
-        // UI button state will remain (that's ok), user can toggle again
+        this.ui.setDemolishActive(false);
         return;
       }
       this.build.setSelectedBuildType(null);
