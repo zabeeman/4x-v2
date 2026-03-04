@@ -65,6 +65,7 @@ export function createChunkManager(scene, cfg, palette) {
   let queueHead = 0;
   let cacheTick = 0;
   const chunkCacheLimit = Math.max(0, cfg.chunkCacheLimit ?? 48);
+  let lastViewChunkBounds = null;
 
   function worldToChunkCoord(worldX) {
     return Math.floor(worldX / chunkPx);
@@ -436,6 +437,14 @@ return { texKey, img, wave };
     pruneCache();
   }
 
+  function sameChunkBounds(a, b) {
+    return !!a && !!b
+      && a.minCX === b.minCX
+      && a.maxCX === b.maxCX
+      && a.minCY === b.minCY
+      && a.maxCY === b.maxCY;
+  }
+
   function updateNeededChunks() {
     const v = cam.worldView;
 
@@ -444,16 +453,23 @@ return { texKey, img, wave };
     const minCY = worldToChunkCoord(v.y) - cfg.marginChunks;
     const maxCY = worldToChunkCoord(v.y + v.height) + cfg.marginChunks;
 
-    for (let cy = minCY; cy <= maxCY; cy++) {
-      for (let cx = minCX; cx <= maxCX; cx++) {
-        if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
-      }
-    }
+    const currentBounds = { minCX, maxCX, minCY, maxCY };
+    const boundsChanged = !sameChunkBounds(lastViewChunkBounds, currentBounds);
 
-    for (const c of chunks.values()) {
-      if (c.cx < minCX || c.cx > maxCX || c.cy < minCY || c.cy > maxCY) {
-        unloadChunk(c.cx, c.cy);
+    if (boundsChanged) {
+      for (let cy = minCY; cy <= maxCY; cy++) {
+        for (let cx = minCX; cx <= maxCX; cx++) {
+          if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
+        }
       }
+
+      for (const c of chunks.values()) {
+        if (c.cx < minCX || c.cx > maxCX || c.cy < minCY || c.cy > maxCY) {
+          unloadChunk(c.cx, c.cy);
+        }
+      }
+
+      lastViewChunkBounds = currentBounds;
     }
   }
 
