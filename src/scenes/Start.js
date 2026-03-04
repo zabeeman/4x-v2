@@ -40,6 +40,28 @@ function parseIntQ(name, def) {
   return Number.isFinite(n) ? n : def;
 }
 
+
+const DOCTRINE_SNAPSHOT_LS_KEY = '4x_v2_doctrine_snapshot_v1';
+
+function loadDoctrineSnapshotFromStorage() {
+  try {
+    const raw = localStorage.getItem(DOCTRINE_SNAPSHOT_LS_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDoctrineSnapshotToStorage(snapshot) {
+  try {
+    localStorage.setItem(DOCTRINE_SNAPSHOT_LS_KEY, JSON.stringify(snapshot ?? {}));
+  } catch {
+    // ignore
+  }
+}
+
 export class Start extends Phaser.Scene {
   constructor() {
     super("Start");
@@ -72,6 +94,10 @@ export class Start extends Phaser.Scene {
     // Sim data + sim
     this.gameData = createDefaultGameData(this.gcfg);
     this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
+    this._lastDoctrineSaveRev = -1;
+
+    const doctrineSnapshot = loadDoctrineSnapshotFromStorage();
+    if (doctrineSnapshot) this.sim.importDoctrineSnapshot(doctrineSnapshot);
 
     // Safe distance
     this.safeDist = parseIntQ("mindist", this.gcfg.spawn.safeDistanceTilesDefault);
@@ -106,14 +132,9 @@ export class Start extends Phaser.Scene {
       this.overlays.setPlacementType(id);
     });
 
-    // Presets
-    this.selectedPresetId = this.gameData.presets[0]?.id ?? 'Balanced';
-    this.ui.setPresetOptions(this.gameData.presets, (pid) => {
-      this.selectedPresetId = pid;
-    });
-
+    // Doctrine-driven recommendations + doctrines screen
     this.ui.setRecommendHandler(() => {
-      const rec = this.sim.recommendNextBuilding(this.selectedPresetId);
+      const rec = this.sim.recommendNextBuilding();
       if (rec) {
         this.build.setSelectedBuilding(rec);
         this.ui.setSelectedBuilding(rec);
@@ -123,19 +144,45 @@ export class Start extends Phaser.Scene {
       }
     });
 
-    // Doctrines
-    const groups = this.sim.getDoctrineGroups();
     const renderDoctrines = () => {
-      this.ui.renderDoctrines(
-        groups,
-        this.sim.state.selectedDoctrines,
-        (id) => this.sim.canSelectDoctrine(id),
-        (id) => {
-          this.sim.selectDoctrine(id);
-          renderDoctrines();
-        }
-      );
+      this.ui.renderDoctrineScreen(this.sim.getDoctrineScreenState());
+      this.ui.setDoctrineRecommendations(this.sim.getDoctrineBuildingRecommendations());
     };
+
+    this.ui.setDoctrineHandlers({
+      onToggle: (id) => {
+        this.sim.toggleDoctrine(id);
+        renderDoctrines();
+      },
+      onApplyPreset: (presetId) => {
+        this.sim.applyDoctrinePreset(presetId);
+        renderDoctrines();
+      },
+      onFinalizeStart: () => {
+        this.sim.finalizeInitialDoctrines();
+        renderDoctrines();
+      },
+      onBeginPlanning: () => {
+        this.sim.beginDoctrinePlanning();
+        renderDoctrines();
+      },
+      onCancelPlanning: () => {
+        this.sim.cancelDoctrinePlanning();
+        renderDoctrines();
+      },
+      onResetDraft: () => {
+        this.sim.resetDoctrineDraft();
+        renderDoctrines();
+      },
+      onProposeReform: () => {
+        this.sim.proposeDoctrineReform();
+        renderDoctrines();
+      },
+      onConfirmReform: () => {
+        this.sim.confirmDoctrineReform();
+        renderDoctrines();
+      },
+    });
     renderDoctrines();
 
     // Overlay toggles
@@ -324,6 +371,9 @@ export class Start extends Phaser.Scene {
 
       // reset sim
       this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
+      const doctrineSnapshot = loadDoctrineSnapshotFromStorage();
+      if (doctrineSnapshot) this.sim.importDoctrineSnapshot(doctrineSnapshot);
+      this._lastDoctrineSaveRev = -1;
 
       // rewire overlays sim ref
       this.overlays.sim = this.sim;
@@ -405,6 +455,11 @@ export class Start extends Phaser.Scene {
       });
     }
 
+    if (rev !== this._lastDoctrineSaveRev) {
+      this._lastDoctrineSaveRev = rev;
+      saveDoctrineSnapshotToStorage(this.sim.exportDoctrineSnapshot());
+    }
+
     // UI
     const sel = this.units.getSelectedUnit();
     const buildType = this.build.getSelectedBuildType();
@@ -431,7 +486,7 @@ export class Start extends Phaser.Scene {
       `powder=${res.powder.toFixed(1)} (+${per.powder.toFixed(2)}/min)  research=${(res.research ?? 0).toFixed(1)} (+${per.research.toFixed(2)}/min)`,
       `trade_income=${this.sim.state.trade.goldPerMin.toFixed(2)}/min`,
       `cheats=${this.sim.isInfiniteResources() ? '∞' : '—'}`,
-      `doctrines=${this.sim.state.selectedDoctrines.join(', ') || '—'}`,
+      `doctrines=${(this.sim.state.doctrineLoadout?.selectedDoctrineIds ?? []).join(', ') || '—'}`,
       `chunks=${this.chunkMgr.getLoadedCount?.() ?? "?"}`,
     ]);
   }
