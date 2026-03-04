@@ -1,5 +1,5 @@
-// src/world/game/spawnSystem.js
-import { sampleHM } from "../infinite/terrainSampler.js";
+// src/world/game/ui/spawnSystem.js
+import { sampleHM } from "../../infinite/terrainSampler.js";
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 

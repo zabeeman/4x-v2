@@ -1,5 +1,5 @@
-// src/world/game/spawnManager.js
-import { sampleHM } from "../infinite/terrainSampler.js";
+// src/world/game/ui/spawnManager.js
+import { sampleHM } from "../../infinite/terrainSampler.js";
 
 function hash01(seed, x, y) {
   let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(seed >>> 0, 1442695041);

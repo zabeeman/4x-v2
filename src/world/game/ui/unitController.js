@@ -1,5 +1,5 @@
-// src/world/game/unitController.js
-import { sampleHM } from "../infinite/terrainSampler.js";
+// src/world/game/ui/unitController.js
+import { sampleHM } from "../../infinite/terrainSampler.js";
 
 function isLandSurface(surface) {
   return surface !== "shallow_water" && surface !== "deep_water";

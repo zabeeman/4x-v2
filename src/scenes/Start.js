@@ -3,12 +3,12 @@ import { terrainPalette } from "../world/infinite/terrainPalette.js";
 import { createChunkManager } from "../world/infinite/chunkManager.js";
 import { createFreeCameraController } from "../world/camera/cameraController.js";
 
-import { gameConfig } from "../world/game/gameConfig.js";
-import { FogOfWar } from "../world/game/fogOfWar.js";
-import { UnitManager } from "../world/game/unitManager.js";
+import { gameConfig } from "../world/game/ui/gameConfig.js";
+import { FogOfWar } from "../world/game/ui/fogOfWar.js";
+import { UnitManager } from "../world/game/ui/unitManager.js";
 import { BuildManager } from "../world/game/buildManager.js";
-import { UIManager } from "../world/game/uiManager.js";
-import { findSpawn, loadSpawnRegistry, addSpawnToRegistry, clearSpawnRegistry } from "../world/game/spawnManager.js";
+import { UIManager } from "../world/game/ui/uiManager.js";
+import { findSpawn, loadSpawnRegistry, addSpawnToRegistry, clearSpawnRegistry } from "../world/game/ui/spawnManager.js";
 
 import { createDefaultGameData } from "../world/game/sim/defaultGameData.js";
 import { GameSim } from "../world/game/sim/gameSim.js";

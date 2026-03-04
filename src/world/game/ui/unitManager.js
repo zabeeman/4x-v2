@@ -1,4 +1,4 @@
-// src/world/game/unitManager.js
+// src/world/game/ui/unitManager.js
 
 export class UnitManager {
   constructor(scene, infiniteCfg, gameCfg, fog) {

@@ -1,4 +1,4 @@
-// src/world/game/uiManager.js
+// src/world/game/ui/uiManager.js
 // DOM-based UI overlay (not affected by camera zoom).
 
 function el(tag, cls, parent) {
