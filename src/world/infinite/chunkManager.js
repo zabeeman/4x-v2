@@ -2,6 +2,7 @@
 import { sampleHM, sampleTerrain } from "./terrainSampler.js";
 import { clamp } from "../gen/genRules.js";
 import { createTerrainTextureBank } from "./terrainTextures.js";
+import { gridToScreen, screenToGrid, snapGrid, resolveIsoConfig } from "../render/isoProjector.js";
 
 function key(cx, cy) { return `${cx},${cy}`; }
 
@@ -23,6 +24,7 @@ export function createChunkManager(scene, cfg, palette) {
   const tileSize = cfg.tileSize;
   const chunkSize = cfg.chunkSize;
   const chunkPx = chunkSize * tileSize;
+  const iso = resolveIsoConfig(cfg);
 
   // Visual toggles
   const useTextures = cfg.useTextures ?? true;
@@ -66,8 +68,27 @@ export function createChunkManager(scene, cfg, palette) {
   let cacheTick = 0;
   const chunkCacheLimit = Math.max(0, cfg.chunkCacheLimit ?? 48);
 
-  function worldToChunkCoord(worldX) {
-    return Math.floor(worldX / chunkPx);
+  function worldToChunkCoord(worldX) { return Math.floor(worldX / chunkPx); }
+
+  function getChunkScreenBounds(cx, cy) {
+    if (!cfg.isoMode) {
+      return { x: cx * chunkPx, y: cy * chunkPx, w: chunkPx, h: chunkPx };
+    }
+    const startGX = cx * chunkSize;
+    const startGY = cy * chunkSize;
+    const corners = [
+      gridToScreen(startGX, startGY, cfg),
+      gridToScreen(startGX + chunkSize, startGY, cfg),
+      gridToScreen(startGX, startGY + chunkSize, cfg),
+      gridToScreen(startGX + chunkSize, startGY + chunkSize, cfg),
+    ];
+    const xs = corners.map(c => c.x);
+    const ys = corners.map(c => c.y);
+    const minX = Math.floor(Math.min(...xs) - 2);
+    const minY = Math.floor(Math.min(...ys) - 2);
+    const maxX = Math.ceil(Math.max(...xs) + 2);
+    const maxY = Math.ceil(Math.max(...ys) + 2);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
 
   function enqueue(cx, cy) {
@@ -114,15 +135,17 @@ export function createChunkManager(scene, cfg, palette) {
 
     cachedChunks.delete(k);
     touchCacheEntry(cached);
-    cached.img.setPosition(cx * chunkPx, cy * chunkPx).setVisible(true);
-    if (cached.wave) cached.wave.img.setPosition(cx * chunkPx, cy * chunkPx).setVisible(true);
+    const b = getChunkScreenBounds(cx, cy);
+    cached.img.setPosition(b.x, b.y).setVisible(true);
+    if (cached.wave) cached.wave.img.setPosition(b.x, b.y).setVisible(true);
     chunks.set(k, cached);
     return true;
   }
 
   function createChunkTexture(cx, cy) {
     const texKey = `chunk_${cx}_${cy}`;
-    const tex = scene.textures.createCanvas(texKey, chunkPx, chunkPx);
+    const bounds = getChunkScreenBounds(cx, cy);
+    const tex = scene.textures.createCanvas(texKey, bounds.w, bounds.h);
     const ctx = tex.getContext();
     ctx.imageSmoothingEnabled = false;
 
@@ -315,21 +338,35 @@ if (waterWaves) {
   }
 }
 
-        const px = lx * tileSize;
-        const py = ly * tileSize;
+        const p0 = gridToScreen(gx, gy, cfg);
+        const p1 = gridToScreen(gx + 1, gy, cfg);
+        const p2 = gridToScreen(gx + 1, gy + 1, cfg);
+        const p3 = gridToScreen(gx, gy + 1, cfg);
+        const px = p0.x - bounds.x;
+        const py = p0.y - bounds.y;
 
         // base color fill
         ctx.fillStyle = color;
-        ctx.fillRect(px, py, tileSize, tileSize);
+        if (cfg.isoMode) {
+          ctx.beginPath();
+          ctx.moveTo(p0.x - bounds.x, p0.y - bounds.y);
+          ctx.lineTo(p1.x - bounds.x, p1.y - bounds.y);
+          ctx.lineTo(p2.x - bounds.x, p2.y - bounds.y);
+          ctx.lineTo(p3.x - bounds.x, p3.y - bounds.y);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.fillRect(px, py, tileSize, tileSize);
+        }
 
         // overlay procedural texture (black/white with alpha)
-        if (useTextures && texBank) {
+        if (useTextures && texBank && !cfg.isoMode) {
           ctx.drawImage(texBank.pick(kind, gx, gy), px, py);
         }
 
         // subtle slope shading (only for land-ish surfaces)
         const shadeEnabled = cfg.enableSlopeShade ?? true;
-        if (shadeEnabled && L > 0 && surface !== "beach" && surface !== "snow") {
+        if (shadeEnabled && L > 0 && surface !== "beach" && surface !== "snow" && !cfg.isoMode) {
           const shade = clamp((s.slope - 0.35) / 0.65, 0, 1) * 0.18;
           if (shade > 0.001) {
             ctx.fillStyle = `rgba(0,0,0,${shade})`;
@@ -343,21 +380,21 @@ if (waterWaves) {
         const nLand = isLand(ex, ey - 1), sLand = isLand(ex, ey + 1), wLand = isLand(ex - 1, ey), eLand = isLand(ex + 1, ey);
         const nWater = isWater(ex, ey - 1), sWater = isWater(ex, ey + 1), wWater = isWater(ex - 1, ey), eWater = isWater(ex + 1, ey);
 
-        if (L <= 0) {
+        if (!cfg.isoMode && L <= 0) {
           // foam on water cells next to land
           ctx.fillStyle = "rgba(255,255,255,0.28)";
           if (nLand) ctx.fillRect(px, py, tileSize, 1);
           if (sLand) ctx.fillRect(px, py + tileSize - 1, tileSize, 1);
           if (wLand) ctx.fillRect(px, py, 1, tileSize);
           if (eLand) ctx.fillRect(px + tileSize - 1, py, 1, tileSize);
-        } else if (surface === "beach") {
+        } else if (!cfg.isoMode && surface === "beach") {
           // wet edge on beach tiles next to water
           ctx.fillStyle = "rgba(0,0,0,0.10)";
           if (nWater) ctx.fillRect(px, py, tileSize, 1);
           if (sWater) ctx.fillRect(px, py + tileSize - 1, tileSize, 1);
           if (wWater) ctx.fillRect(px, py, 1, tileSize);
           if (eWater) ctx.fillRect(px + tileSize - 1, py, 1, tileSize);
-        } else if (surface === "coast_cliff") {
+        } else if (!cfg.isoMode && surface === "coast_cliff") {
           // darker rim for cliffs facing water
           ctx.fillStyle = "rgba(0,0,0,0.22)";
           if (nWater) ctx.fillRect(px, py, tileSize, 1);
@@ -383,17 +420,17 @@ if (waterWaves) {
     }
 
 tex.refresh();
-const img = scene.add.image(cx * chunkPx, cy * chunkPx, texKey).setOrigin(0, 0).setDepth(0);
+const img = scene.add.image(bounds.x, bounds.y, texKey).setOrigin(0, 0).setDepth(0);
 
 // --- Wave overlay texture (animated) ---
 let wave = null;
 if (waterWaves && shore_lx.length > 0) {
   const waveKey = `wave_${cx}_${cy}`;
-  const wtex = scene.textures.createCanvas(waveKey, chunkPx, chunkPx);
+  const wtex = scene.textures.createCanvas(waveKey, bounds.w, bounds.h);
   const wctx = wtex.getContext();
   wctx.imageSmoothingEnabled = false;
 
-  const wimg = scene.add.image(cx * chunkPx, cy * chunkPx, waveKey).setOrigin(0, 0).setDepth(1);
+  const wimg = scene.add.image(bounds.x, bounds.y, waveKey).setOrigin(0, 0).setDepth(1);
   // Foam looks nicer in additive blend; you can switch to NORMAL if you want.
   if (typeof Phaser !== "undefined") wimg.setBlendMode(Phaser.BlendModes.ADD);
   wimg.setAlpha(cfg.waveLayerAlpha ?? 0.9);
@@ -439,10 +476,33 @@ return { texKey, img, wave };
   function updateNeededChunks() {
     const v = cam.worldView;
 
-    const minCX = worldToChunkCoord(v.x) - cfg.marginChunks;
-    const maxCX = worldToChunkCoord(v.x + v.width) + cfg.marginChunks;
-    const minCY = worldToChunkCoord(v.y) - cfg.marginChunks;
-    const maxCY = worldToChunkCoord(v.y + v.height) + cfg.marginChunks;
+    let minCX;
+    let maxCX;
+    let minCY;
+    let maxCY;
+    if (!cfg.isoMode) {
+      minCX = worldToChunkCoord(v.x) - cfg.marginChunks;
+      maxCX = worldToChunkCoord(v.x + v.width) + cfg.marginChunks;
+      minCY = worldToChunkCoord(v.y) - cfg.marginChunks;
+      maxCY = worldToChunkCoord(v.y + v.height) + cfg.marginChunks;
+    } else {
+      const corners = [
+        screenToGrid(v.x, v.y, cfg),
+        screenToGrid(v.x + v.width, v.y, cfg),
+        screenToGrid(v.x, v.y + v.height, cfg),
+        screenToGrid(v.x + v.width, v.y + v.height, cfg),
+      ];
+      const gxs = corners.map(c => c.gx);
+      const gys = corners.map(c => c.gy);
+      const minGX = Math.floor(Math.min(...gxs)) - cfg.marginChunks * chunkSize;
+      const maxGX = Math.ceil(Math.max(...gxs)) + cfg.marginChunks * chunkSize;
+      const minGY = Math.floor(Math.min(...gys)) - cfg.marginChunks * chunkSize;
+      const maxGY = Math.ceil(Math.max(...gys)) + cfg.marginChunks * chunkSize;
+      minCX = Math.floor(minGX / chunkSize);
+      maxCX = Math.floor(maxGX / chunkSize);
+      minCY = Math.floor(minGY / chunkSize);
+      maxCY = Math.floor(maxGY / chunkSize);
+    }
 
     for (let cy = minCY; cy <= maxCY; cy++) {
       for (let cx = minCX; cx <= maxCX; cx++) {
@@ -464,7 +524,7 @@ function renderWaves(chunk, nowMs) {
   const ctx = w.ctx;
 
   // Clear overlay
-  ctx.clearRect(0, 0, chunkPx, chunkPx);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
   const t = nowMs * 0.001;
 
@@ -507,6 +567,7 @@ function renderWaves(chunk, nowMs) {
     const ty = w.ly[i] + dy * off;
     if (tx < 0 || ty < 0 || tx >= chunkSize || ty >= chunkSize) continue;
 
+    if (cfg.isoMode) continue;
     const px = tx * tileSize;
     const py = ty * tileSize;
 
@@ -576,6 +637,11 @@ function updateWaveOverlays() {
     },
     getLoadedCount() { return chunks.size; },
     getCachedCount() { return cachedChunks.size; },
-    worldToTile(wx, wy) { return { tx: Math.floor(wx / tileSize), ty: Math.floor(wy / tileSize) }; },
+    worldToTile(wx, wy) {
+      if (!cfg.isoMode) return { tx: Math.floor(wx / tileSize), ty: Math.floor(wy / tileSize) };
+      const g = screenToGrid(wx, wy, cfg);
+      const s = snapGrid(g.gx, g.gy);
+      return { tx: s.ix, ty: s.iy };
+    },
   };
 }
