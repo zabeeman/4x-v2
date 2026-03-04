@@ -85,6 +85,41 @@ export function applyMod(stats, mod, sourceLabel) {
   ensureBreakdown(stats, s).push({ source: sourceLabel, type: mod.type, value: mod.value });
 }
 
+
+function getActiveDoctrineIds(state) {
+  if (Array.isArray(state?.doctrineLoadout?.selectedDoctrineIds)) return state.doctrineLoadout.selectedDoctrineIds;
+  if (Array.isArray(state?.selectedDoctrines)) return state.selectedDoctrines;
+  return [];
+}
+
+function collectDoctrineEffectSource(gameData, state) {
+  const source = [];
+  for (const dId of getActiveDoctrineIds(state)) {
+    const d = gameData.doctrines.find((x) => x.id === dId);
+    if (!d) continue;
+
+    // Data-driven effects[] path.
+    if (Array.isArray(d.effects) && d.effects.length > 0) {
+      for (const e of d.effects) {
+        if (e?.stat && e?.type) source.push({ stat: e.stat, type: e.type, value: e.value ?? 0, _source: `Doc:${d.id}` });
+      }
+      continue;
+    }
+
+    // Legacy support: mods path.
+    if (d.mods) {
+      for (const m of d.mods) source.push({ ...m, _source: `Doc:${d.id}` });
+    }
+  }
+  return source;
+}
+
+
+function collectActiveReformModifiers(state) {
+  if (state?.reform?.state !== 'ACTIVE') return [];
+  return Array.isArray(state?.reform?.temporaryModifiers) ? state.reform.temporaryModifiers : [];
+}
+
 function syncLegacyAliases(stats) {
   stats.flat[StatId.PopCap] = stats.PopCap;
   stats.flat[StatId.Corruption] = stats.Corruption;
@@ -102,11 +137,10 @@ export function computeCityStats(gameData, city, state) {
     for (const m of gov.mods) applyMod(stats, m, `Gov:${gov.id}`);
   }
 
-  for (const dId of state.selectedDoctrines) {
-    const d = gameData.doctrines.find((x) => x.id === dId);
-    if (!d) continue;
-    if (d.mods) for (const m of d.mods) applyMod(stats, m, `Doc:${d.id}`);
-  }
+  const doctrineEffects = collectDoctrineEffectSource(gameData, state);
+  for (const m of doctrineEffects) applyMod(stats, m, m._source ?? 'Doc');
+
+  for (const m of collectActiveReformModifiers(state)) applyMod(stats, m, 'Reform:Temporary');
 
   const hub = city.hub;
   if (hub) {
