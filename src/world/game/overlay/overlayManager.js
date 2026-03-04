@@ -461,7 +461,7 @@ export class OverlayManager {
   }
 
   // Placement helper: highlight tiles where the currently selected building type can be placed.
-  // Uses sim.getPlacementHint(typeId, tx, ty) which mirrors canPlaceBuilding() logic.
+  // Uses precomputed chunk bitsets from placement cache.
   _renderPlacementChunk(chunk) {
     const ctx = chunk.ctx;
     ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
@@ -470,9 +470,6 @@ export class OverlayManager {
       chunk.tex.refresh();
       return;
     }
-
-    const startGX = chunk.cx * this.chunkSize;
-    const startGY = chunk.cy * this.chunkSize;
 
     const def = this.sim?.getBuildingDef?.(this.placementTypeId);
     const isExtractor = !!def?.extract;
@@ -483,13 +480,24 @@ export class OverlayManager {
       ? `rgba(171, 71, 188, ${okAlpha})`
       : `rgba(60, 220, 120, ${okAlpha})`;
 
-    for (let ly = 0; ly < this.chunkSize; ly++) {
-      for (let lx = 0; lx < this.chunkSize; lx++) {
-        const gx = startGX + lx;
-        const gy = startGY + ly;
-        const res = this.sim.getPlacementHint(this.placementTypeId, gx, gy);
-        if (!res?.ok) continue;
+    const masks = this.sim?.getPlacementMask?.(this.placementTypeId) ?? [];
+    const found = masks.find((m) => m.cx === chunk.cx && m.cy === chunk.cy);
+    if (!found) {
+      chunk.tex.refresh();
+      return;
+    }
+
+    const bits = found.bitset4096;
+    for (let wordIdx = 0; wordIdx < bits.length; wordIdx++) {
+      let word = bits[wordIdx];
+      while (word) {
+        const t = word & -word;
+        const b = 31 - Math.clz32(t);
+        const idx = (wordIdx << 5) + b;
+        const ly = Math.floor(idx / this.chunkSize);
+        const lx = idx - ly * this.chunkSize;
         ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
+        word ^= t;
       }
     }
 
