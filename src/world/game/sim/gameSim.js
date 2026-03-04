@@ -158,7 +158,7 @@ export class GameSim {
     if (existingIdx >= 0) list[existingIdx] = zoneSource;
     else list.push(zoneSource);
     this.state.zoneSourcesByCity.set(cityId, list);
-    console.log("ZoneSources city", cityId, list.length);
+    console.log("AddZoneSource", cityId, building.id, zoneSource.radius, zoneSource.priority, zoneSource.tiles.length);
 
     this.rebuildCityZones(cityId);
   }
@@ -173,8 +173,31 @@ export class GameSim {
       for (const key of tiles) union.add(key);
     }
     this.state.cityBuildZoneTiles.set(cityId, union);
-    console.log("CityZoneTiles size", cityId, union.size);
+    console.log("CityBuildZoneTiles size", cityId, union.size);
     return union;
+  }
+
+  _materializeSpawnCity(newCityId) {
+    const spawnKey = 'spawn';
+
+    const spawnOwnedBuildings = this.state.buildings.filter((b) => b.cityId === spawnKey);
+    for (const b of spawnOwnedBuildings) b.cityId = newCityId;
+
+    const movedSources = this.state.zoneSourcesByCity.get(spawnKey) ?? [];
+    if (movedSources.length > 0) {
+      for (const src of movedSources) src.cityId = newCityId;
+      const existing = this.state.zoneSourcesByCity.get(newCityId) ?? [];
+      this.state.zoneSourcesByCity.set(newCityId, [...existing, ...movedSources]);
+      this.state.zoneSourcesByCity.delete(spawnKey);
+    }
+
+    const spawnTiles = this.state.cityBuildZoneTiles.get(spawnKey);
+    if (spawnTiles) {
+      const existing = this.state.cityBuildZoneTiles.get(newCityId) ?? new Set();
+      const merged = new Set([...existing, ...spawnTiles]);
+      this.state.cityBuildZoneTiles.set(newCityId, merged);
+      this.state.cityBuildZoneTiles.delete(spawnKey);
+    }
   }
 
   _rebuildAllCityZones() {
@@ -448,7 +471,9 @@ export class GameSim {
     let cityId = placement.cityId;
     let createdCity = null;
 
-    if (def.isStarter || def.isHub || (!cityId && def.buildZone?.addsBuildZone)) {
+    const createsZone = !!def?.buildZone?.addsBuildZone;
+    const shouldMaterializeSpawnCity = cityId === 'spawn' && createsZone;
+    if (def.isStarter || def.isHub || (!cityId && createsZone) || shouldMaterializeSpawnCity) {
       cityId = nowId('city');
       const city = {
         id: cityId,
@@ -459,6 +484,8 @@ export class GameSim {
       };
       this.state.cities.push(city);
       createdCity = city;
+
+      if (shouldMaterializeSpawnCity) this._materializeSpawnCity(cityId);
     }
 
     const b = {
