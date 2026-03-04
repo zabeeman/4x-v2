@@ -48,8 +48,7 @@ export class BuildManager {
   isValidBuildTile(seed, tx, ty) {
     // Sim does district rules + extractor rules + starter gate.
     if (this.sim) {
-      const chk = this.sim.canPlaceBuilding(this.selectedBuildTypeId, tx, ty);
-      return chk;
+      return this.sim.validatePlacement(this.selectedBuildTypeId, tx, ty);
     }
 
     // legacy fallback
@@ -73,12 +72,10 @@ export class BuildManager {
     this.ghost.setPosition(x, y).setVisible(true);
 
     const chk = this.isValidBuildTile(seed, tx, ty);
-    const afford = this.sim ? this.sim.canAfford(type.id) : true;
-
     this._valid = !!chk.ok;
-    this._afford = !!afford;
+    this._afford = chk.affordabilityOk ?? (this.sim ? this.sim.canAfford(type.id) : true);
     this._lastGhostTile = { tx, ty };
-    this._lastReason = chk.reason ?? null;
+    this._lastReason = chk.reasons?.[0] ?? null;
 
     // Colors:
     // - green = ok + afford
@@ -105,7 +102,7 @@ export class BuildManager {
     const chk = this.isValidBuildTile(seed, tx, ty);
     if (!chk.ok) return null;
 
-    if (this.sim && !this.sim.canAfford(type.id)) return null;
+    if (this.sim && !chk.affordabilityOk) return null;
 
     // Place in sim first
     let placed = null;
