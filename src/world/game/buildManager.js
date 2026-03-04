@@ -37,7 +37,12 @@ export class BuildManager {
 
   setSelectedBuildType(id) {
     this.selectedBuildTypeId = id;
+    console.log("BM selected", this.selectedBuildTypeId);
     this.ghost.setVisible(!!id);
+  }
+
+  setSelectedBuilding(id) {
+    this.setSelectedBuildType(id);
   }
 
   getSelectedBuildType() {
@@ -102,6 +107,8 @@ export class BuildManager {
       const res = this.sim.placeBuilding(type.id, tx, ty);
       if (!res?.ok) return null;
       placed = res.building;
+      const def = this.sim.getBuildingDef(type.id);
+      console.log("Placed", type.id, tx, ty, placed?.cityId ?? null, def?.buildZone ?? null);
     }
 
     // Visual
