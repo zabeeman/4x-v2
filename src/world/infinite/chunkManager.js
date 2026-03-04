@@ -59,8 +59,12 @@ export function createChunkManager(scene, cfg, palette) {
   }
 
   const chunks = new Map();
+  const cachedChunks = new Map();
   const queued = new Set();
   const queue = [];
+  let queueHead = 0;
+  let cacheTick = 0;
+  const chunkCacheLimit = Math.max(0, cfg.chunkCacheLimit ?? 48);
 
   function worldToChunkCoord(worldX) {
     return Math.floor(worldX / chunkPx);
@@ -68,9 +72,52 @@ export function createChunkManager(scene, cfg, palette) {
 
   function enqueue(cx, cy) {
     const k = key(cx, cy);
-    if (chunks.has(k) || queued.has(k)) return;
+    if (chunks.has(k) || cachedChunks.has(k) || queued.has(k)) return;
     queued.add(k);
     queue.push({ cx, cy });
+  }
+
+  function touchCacheEntry(c) {
+    c.lastUsed = ++cacheTick;
+  }
+
+  function destroyChunkAssets(c) {
+    c.img.destroy();
+    scene.textures.remove(c.texKey);
+    if (c.wave) {
+      c.wave.img.destroy();
+      scene.textures.remove(c.wave.waveKey);
+    }
+  }
+
+  function pruneCache() {
+    if (chunkCacheLimit <= 0) {
+      for (const c of cachedChunks.values()) destroyChunkAssets(c);
+      cachedChunks.clear();
+      return;
+    }
+    while (cachedChunks.size > chunkCacheLimit) {
+      let oldest = null;
+      for (const c of cachedChunks.values()) {
+        if (!oldest || c.lastUsed < oldest.lastUsed) oldest = c;
+      }
+      if (!oldest) break;
+      cachedChunks.delete(key(oldest.cx, oldest.cy));
+      destroyChunkAssets(oldest);
+    }
+  }
+
+  function restoreChunkFromCache(cx, cy) {
+    const k = key(cx, cy);
+    const cached = cachedChunks.get(k);
+    if (!cached) return false;
+
+    cachedChunks.delete(k);
+    touchCacheEntry(cached);
+    cached.img.setPosition(cx * chunkPx, cy * chunkPx).setVisible(true);
+    if (cached.wave) cached.wave.img.setPosition(cx * chunkPx, cy * chunkPx).setVisible(true);
+    chunks.set(k, cached);
+    return true;
   }
 
   function createChunkTexture(cx, cy) {
@@ -375,13 +422,18 @@ return { texKey, img, wave };
     const k = key(cx, cy);
     const c = chunks.get(k);
     if (!c) return;
-    c.img.destroy();
-    scene.textures.remove(c.texKey);
-    if (c.wave) {
-      c.wave.img.destroy();
-      scene.textures.remove(c.wave.waveKey);
-    }
     chunks.delete(k);
+
+    if (chunkCacheLimit <= 0) {
+      destroyChunkAssets(c);
+      return;
+    }
+
+    c.img.setVisible(false);
+    if (c.wave) c.wave.img.setVisible(false);
+    touchCacheEntry(c);
+    cachedChunks.set(k, c);
+    pruneCache();
   }
 
   function updateNeededChunks() {
@@ -393,7 +445,9 @@ return { texKey, img, wave };
     const maxCY = worldToChunkCoord(v.y + v.height) + cfg.marginChunks;
 
     for (let cy = minCY; cy <= maxCY; cy++) {
-      for (let cx = minCX; cx <= maxCX; cx++) enqueue(cx, cy);
+      for (let cx = minCX; cx <= maxCX; cx++) {
+        if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
+      }
     }
 
     for (const c of chunks.values()) {
@@ -497,8 +551,8 @@ function updateWaveOverlays() {
 
   function processQueue() {
     let budget = cfg.maxGenPerFrame;
-    while (budget > 0 && queue.length > 0) {
-      const { cx, cy } = queue.shift();
+    while (budget > 0 && queueHead < queue.length) {
+      const { cx, cy } = queue[queueHead++];
       const k = key(cx, cy);
       queued.delete(k);
       if (chunks.has(k)) continue;
@@ -506,6 +560,11 @@ function updateWaveOverlays() {
       const { texKey, img, wave } = createChunkTexture(cx, cy);
       chunks.set(k, { cx, cy, texKey, img, wave });
       budget--;
+    }
+
+    if (queueHead > 0 && queueHead >= queue.length) {
+      queue.length = 0;
+      queueHead = 0;
     }
   }
 
@@ -516,6 +575,7 @@ function updateWaveOverlays() {
       updateWaveOverlays();
     },
     getLoadedCount() { return chunks.size; },
+    getCachedCount() { return cachedChunks.size; },
     worldToTile(wx, wy) { return { tx: Math.floor(wx / tileSize), ty: Math.floor(wy / tileSize) }; },
   };
 }
