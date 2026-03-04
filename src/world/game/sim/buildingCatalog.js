@@ -46,6 +46,11 @@ const fillResources = (input) => ({ ...zeroCosts(), ...(input ?? {}) });
 const normalize = (raw) => {
   const cost = raw.economy?.costOverride ?? PRESETS.cost[raw.economy?.costPreset] ?? zeroCosts();
   const upkeep = raw.economy?.upkeepOverride ?? PRESETS.upkeepPerMin[raw.economy?.upkeepPreset] ?? { gold: 0 };
+  const baseZoneRadiusTiles = 10;
+  const configuredZoneRadius = Number(raw.zoneContribution?.radius ?? 0);
+  const zoneRadiusTiles = configuredZoneRadius > 0
+    ? configuredZoneRadius
+    : baseZoneRadiusTiles;
 
   return {
     id: raw.id,
@@ -75,9 +80,9 @@ const normalize = (raw) => {
       },
     },
     buildZone: {
-      addsBuildZone: raw.zoneContribution?.addsBuildZone ?? false,
+      addsBuildZone: true,
       zoneShape: raw.zoneContribution?.shape === 'NONE' ? 'TILE_DISK' : (raw.zoneContribution?.shape ?? 'TILE_DISK'),
-      zoneRadiusTiles: raw.zoneContribution?.radius ?? 0,
+      zoneRadiusTiles,
       zonePriority: raw.zoneContribution?.priority ?? 0,
     },
     effects: raw.effects ?? [],
