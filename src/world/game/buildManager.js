@@ -1,5 +1,4 @@
 // src/world/game/buildManager.js
-import { sampleHM } from "../infinite/terrainSampler.js";
 
 export class BuildManager {
   constructor(scene, infiniteCfg, gameCfg, fog, sim) {
@@ -46,18 +45,16 @@ export class BuildManager {
   }
 
   isValidBuildTile(seed, tx, ty) {
-    // Sim does district rules + extractor rules + starter gate.
-    if (this.sim) {
-      return this.sim.validatePlacement(this.selectedBuildTypeId, tx, ty);
+    const def = this.getSelectedBuildType();
+    if (!def || !this.sim?.validatePlacement) {
+      return { ok: false, affordabilityOk: true, reasons: [{ code: 'NO_SIM' }], cityId: null, footprint: [{ tx, ty }] };
     }
 
-    // legacy fallback
-    const cfgB = this.gameCfg.building;
-    const s = sampleHM(seed, tx, ty, this.infiniteCfg);
-    if (cfgB.disallowSurfaces.has(s.surface)) return { ok: false, reason: 'bad_surface' };
-    if ((s.slope ?? 0) > cfgB.maxSlope) return { ok: false, reason: 'too_steep' };
-    for (const b of this.buildings) if (b.tx === tx && b.ty === ty) return { ok: false, reason: 'occupied' };
-    return { ok: true, cityId: null };
+    let res = this.sim.validatePlacement(def, tx, ty, this.sim.state);
+    if (!res?.ok && res?.reasons?.[0]?.code === 'UNKNOWN_BUILDING') {
+      res = this.sim.validatePlacement(def.id, tx, ty);
+    }
+    return res;
   }
 
   updateGhost(seed, worldX, worldY) {
@@ -79,14 +76,14 @@ export class BuildManager {
 
     // Colors:
     // - green = ok + afford
-    // - orange = ok but no resources
+    // - yellow = ok but no resources
     // - red = invalid
     if (!this._valid) {
       this.ghost.setFillStyle(0xef476f, 0.22);
       this.ghost.setStrokeStyle(2, 0xef476f, 0.55);
     } else if (!this._afford) {
-      this.ghost.setFillStyle(0xf4a261, 0.22);
-      this.ghost.setStrokeStyle(2, 0xf4a261, 0.55);
+      this.ghost.setFillStyle(0xffcc00, 0.22);
+      this.ghost.setStrokeStyle(2, 0xffcc00, 0.55);
     } else {
       this.ghost.setFillStyle(0x06d6a0, 0.22);
       this.ghost.setStrokeStyle(2, 0x06d6a0, 0.55);
@@ -104,12 +101,48 @@ export class BuildManager {
 
     if (this.sim && !chk.affordabilityOk) return null;
 
-    // Place in sim first
+    // Place in sim state (new placement flow).
     let placed = null;
     if (this.sim) {
-      const res = this.sim.placeBuilding(type.id, tx, ty);
-      if (!res.ok) return null;
-      placed = res.building;
+      const infinite = this.sim.isInfiniteResources?.() ?? this.sim.state?.cheats?.infiniteResources;
+      if (!infinite) this.sim.spendCost?.(type.id);
+
+      placed = {
+        id: `${type.id}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+        typeId: type.id,
+        tx,
+        ty,
+        cityId: chk.cityId ?? null,
+        buildProgress: 0,
+        completed: false,
+      };
+
+      if (!Array.isArray(this.sim.state.buildings)) this.sim.state.buildings = [];
+      this.sim.state.buildings.push(placed);
+
+      const city = placed.cityId ? this.sim.getCityById?.(placed.cityId) : null;
+      if (city) {
+        if (!Array.isArray(city.buildings)) city.buildings = [];
+        city.buildings.push(placed);
+      }
+
+      if (type.buildZone?.addsBuildZone) {
+        if (!this.sim.state.buildZone) this.sim.state.buildZone = {};
+        if (!Array.isArray(this.sim.state.buildZone.sources)) this.sim.state.buildZone.sources = [];
+        this.sim.state.buildZone.sources.push({
+          buildingId: placed.id,
+          cityId: placed.cityId,
+          tx,
+          ty,
+          shape: type.buildZone.zoneShape ?? 'TILE_DISK',
+          radius: type.buildZone.zoneRadiusTiles ?? 0,
+          priority: type.buildZone.zonePriority ?? 0,
+        });
+      }
+
+      this.sim.rebuildCityZones?.();
+      this.sim.recomputeDerived?.();
+      this.sim._bump?.();
     }
 
     // Visual
