@@ -1,12 +1,24 @@
 // src/world/game/ui/uiManager.js
 // DOM-based UI overlay (not affected by camera zoom).
 
+import { localizePlacementReason } from '../sim/reasonCodes.js';
+
 function el(tag, cls, parent) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (parent) parent.appendChild(e);
   return e;
 }
+
+const CATEGORY_ORDER = [
+  'GOVERNANCE',
+  'RESIDENTIAL',
+  'ECONOMY',
+  'INDUSTRY',
+  'MILITARY',
+  'SCIENCE',
+  'INFRASTRUCTURE',
+];
 
 export class UIManager {
   constructor(scene, _infiniteCfg, gameCfg) {
@@ -17,6 +29,12 @@ export class UIManager {
     this.playerText = null;
 
     this.buildButtons = [];
+    this.buildingsById = new Map();
+    this.buildingsByCategory = new Map();
+    this.categoryButtons = [];
+    this.currentCategory = null;
+    this.onPickBuilding = null;
+    this.enabledById = new Map();
 
     this.presetSelect = null;
     this.recoBtn = null;
@@ -45,6 +63,9 @@ export class UIManager {
     // building help
     this.buildInfoTitle = null;
     this.buildInfoText = null;
+    this.buildReasonText = null;
+    this.buildTabRow = null;
+    this.buildGrid = null;
 
     // placement hint overlay
     this.chkPlacement = null;
@@ -94,9 +115,44 @@ export class UIManager {
   opacity: 0.9;
 }
 #ui-build .grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 2px;
+}
+#ui-build .tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+.ui-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.ui-card-name {
+  font-weight: 600;
+}
+.ui-card-meta {
+  font-size: 12px;
+  opacity: 0.9;
+}
+.ui-card-effects,
+.ui-card-req,
+.ui-reasons {
+  font-size: 12px;
+  opacity: 0.9;
+  white-space: pre-wrap;
 }
 .ui-btn {
   pointer-events: auto;
@@ -145,6 +201,8 @@ export class UIManager {
     const title = el("div", "title", build);
     title.textContent = "Стройка";
 
+    this.buildTabRow = el('div', 'tabs', build);
+
     this.buildGrid = el("div", "grid", build);
 
     // Building help
@@ -155,6 +213,11 @@ export class UIManager {
     this.buildInfoText = el('div', 'ui-status', build);
     this.buildInfoText.style.whiteSpace = 'pre-wrap';
     this.buildInfoText.style.opacity = '0.9';
+
+    const reasonTitle = el('div', 'ui-mini', build);
+    reasonTitle.textContent = 'Причина недоступности (по наведению):';
+    this.buildReasonText = el('div', 'ui-reasons', build);
+    this.buildReasonText.textContent = '—';
 
     // Preset row
     const row = el('div', 'ui-row', build);
@@ -247,18 +310,196 @@ export class UIManager {
   }
 
   buildButtonsFromCatalogue(catalogue, onPick) {
-    if (this.buildGrid) this.buildGrid.innerHTML = "";
+    this.onPickBuilding = onPick;
+    this.buildingsById = new Map((catalogue ?? []).map((x) => [x.id, x]));
+    this.buildingsByCategory.clear();
+
+    for (const b of (catalogue ?? [])) {
+      const cat = b.category ?? this._inferCategory(b);
+      if (!this.buildingsByCategory.has(cat)) this.buildingsByCategory.set(cat, []);
+      this.buildingsByCategory.get(cat).push(b);
+      if (!this.enabledById.has(b.id)) this.enabledById.set(b.id, true);
+    }
+
+    const firstCategory = CATEGORY_ORDER.find((c) => (this.buildingsByCategory.get(c)?.length ?? 0) > 0) ?? CATEGORY_ORDER[0];
+    if (!this.currentCategory || !this.buildingsByCategory.has(this.currentCategory)) {
+      this.currentCategory = firstCategory;
+    }
+
+    this._renderCategoryTabs();
+    this._renderBuildingCards();
+  }
+
+  _renderCategoryTabs() {
+    if (!this.buildTabRow) return;
+    this.buildTabRow.innerHTML = '';
+    this.categoryButtons.length = 0;
+
+    for (const category of CATEGORY_ORDER) {
+      const btn = el('button', 'ui-btn', this.buildTabRow);
+      btn.type = 'button';
+      btn.textContent = this._prettyCategory(category);
+      btn.style.padding = '6px 8px';
+      btn.style.fontSize = '12px';
+      btn.onclick = () => this.setCategory(category);
+      btn.disabled = !this.buildingsByCategory.has(category);
+      this.categoryButtons.push({ category, btn });
+    }
+
+    this._syncCategoryTabs();
+  }
+
+  _syncCategoryTabs() {
+    for (const c of this.categoryButtons) {
+      if (c.category === this.currentCategory) c.btn.classList.add('selected');
+      else c.btn.classList.remove('selected');
+    }
+  }
+
+  _renderBuildingCards() {
+    if (this.buildGrid) this.buildGrid.innerHTML = '';
     this.buildButtons.length = 0;
 
-    for (const t of catalogue) {
-      const btn = document.createElement("button");
-      btn.className = "ui-btn";
-      btn.textContent = t.name;
+    const list = this.buildingsByCategory.get(this.currentCategory) ?? [];
+    for (const t of list) {
+      const btn = document.createElement('button');
+      btn.className = 'ui-btn ui-card';
       btn.type = "button";
-      btn.addEventListener("click", () => onPick(t.id));
+      btn.addEventListener("click", () => {
+        this.setSelectedBuilding(t.id);
+        this.onPickBuilding?.(t.id);
+      });
+
+      const top = el('div', 'ui-card-top', btn);
+      el('div', 'ui-card-name', top).textContent = t.name ?? t.id;
+      const infoBtn = el('button', 'ui-btn', top);
+      infoBtn.type = 'button';
+      infoBtn.textContent = 'i';
+      infoBtn.style.padding = '2px 8px';
+      infoBtn.style.fontSize = '12px';
+      infoBtn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this.setBuildInfo(t);
+      };
+
+      el('div', 'ui-card-meta', btn).textContent = this._buildCostText(t);
+      el('div', 'ui-card-meta', btn).textContent = this._buildUpkeepText(t);
+      el('div', 'ui-card-meta', btn).textContent = this._buildBuildTimeText(t);
+      el('div', 'ui-card-effects', btn).textContent = `Эффект: ${this._summarizeEffects(t)}`;
+      el('div', 'ui-card-req', btn).textContent = `Требования: ${this._summarizeRequirements(t)}`;
+
+      btn.disabled = !this.enabledById.get(t.id);
+
       this.buildGrid.appendChild(btn);
       this.buildButtons.push({ id: t.id, btn });
     }
+
+    this.highlightSelectedBuilding(this.selectedBuildingId);
+  }
+
+  _prettyCategory(category) {
+    const map = {
+      GOVERNANCE: 'Управление',
+      RESIDENTIAL: 'Жильё',
+      ECONOMY: 'Экономика',
+      INDUSTRY: 'Промышленность',
+      MILITARY: 'Армия',
+      SCIENCE: 'Наука',
+      INFRASTRUCTURE: 'Инфраструктура',
+    };
+    return map[category] ?? String(category ?? 'Другое').replaceAll('_', ' ').toUpperCase();
+  }
+
+  _inferCategory(def) {
+    if (!def) return 'INFRASTRUCTURE';
+    if (def.category) return def.category;
+    const id = String(def.id ?? '').toLowerCase();
+    if (def.isStarter || def.isHub || id.includes('hall')) return 'GOVERNANCE';
+    if (def.extract) return 'INDUSTRY';
+    if (id.includes('house') || id.includes('res')) return 'RESIDENTIAL';
+    if (id.includes('academy') || id.includes('science')) return 'SCIENCE';
+    if (id.includes('bank') || id.includes('trade')) return 'ECONOMY';
+    if (id.includes('barrack') || id.includes('fort') || id.includes('tower')) return 'MILITARY';
+    return 'INFRASTRUCTURE';
+  }
+
+  _buildCostText(def) {
+    const icon = { gold: '🪙', wood: '🪵', metal: '⛓️', marble: '🧱', glass: '🔷', powder: '💥', research: '📘' };
+    const parts = Object.entries(def?.cost ?? {})
+      .filter(([, v]) => Number(v) > 0)
+      .map(([k, v]) => `${icon[k] ?? '•'} ${k}:${v}`);
+    return `Стоимость: ${parts.join('  ') || 'бесплатно'}`;
+  }
+
+  _buildUpkeepText(def) {
+    if (def?.upkeepPerMin) {
+      const parts = Object.entries(def.upkeepPerMin)
+        .filter(([, v]) => Number(v) > 0)
+        .map(([k, v]) => `${k}:${v}`);
+      return `Содержание: ${parts.join('  ') || 'нет'}`;
+    }
+
+    const up = def?.upkeep ?? {};
+    if (typeof up.goldPerMin === 'number' && up.goldPerMin > 0) {
+      return `Содержание: gold:${up.goldPerMin.toFixed(2)}/мин`;
+    }
+    return 'Содержание: нет';
+  }
+
+  _buildBuildTimeText(def) {
+    const t = def?.buildTimeSec ?? def?.buildTime ?? def?.economy?.buildTimePreset ?? null;
+    return `Время: ${t ?? '—'}`;
+  }
+
+  _summarizeEffects(def) {
+    const effects = def?.effects ?? [];
+    if (effects.length > 0) {
+      return effects
+        .slice(0, 2)
+        .map((e) => `${e.type}${e.resource ? `(${e.resource})` : ''} ${e.mode ?? ''} ${e.value ?? ''}`.trim())
+        .join('; ');
+    }
+
+    const mods = def?.mods ?? [];
+    if (mods.length > 0) {
+      return mods
+        .slice(0, 2)
+        .map((m) => `${m.stat}: ${m.type === 'AddFlat' ? m.value : `${(m.value * 100).toFixed(1)}%`}`)
+        .join('; ');
+    }
+
+    if (def?.extract?.resource) return `Добыча ${def.extract.resource}: +${def.extract.basePerMin ?? 0}/мин`;
+    return '—';
+  }
+
+  _summarizeRequirements(def) {
+    const req = [];
+    const pr = def?.placementRules ?? def?.placeRules ?? {};
+    if (pr.allowedSurfaces?.length) req.push(`surface: ${pr.allowedSurfaces.join('/')}`);
+    if (pr.mustBeInsideBuildZone) req.push('zone: внутри зоны');
+    if (pr.canBeOutsideBuildZone) req.push(`distance ≤ ${pr.maxDistanceToBuildZone ?? 0}`);
+    if (pr.allowOutsideBuildAreaWithinTiles) req.push(`distance ≤ ${pr.allowOutsideBuildAreaWithinTiles}`);
+    if (pr.requiresResourceNode?.type || def?.extract?.resource) req.push(`node: ${(pr.requiresResourceNode?.type ?? def.extract?.resource)}`);
+    if (pr.requiresCoast) req.push('coast');
+    if (pr.limit?.perCity) req.push(`limits city:${pr.limit.perCity}`);
+    if (pr.limit?.perPlayer) req.push(`limits player:${pr.limit.perPlayer}`);
+    return req.join('; ') || 'нет';
+  }
+
+  setCategory(category) {
+    if (!CATEGORY_ORDER.includes(category)) return;
+    this.currentCategory = category;
+    this._syncCategoryTabs();
+    this._renderBuildingCards();
+  }
+
+  setSelectedBuilding(buildingId) {
+    this.selectedBuildingId = buildingId;
+    const def = buildingId ? this.buildingsById.get(buildingId) : null;
+    const category = def ? (def.category ?? this._inferCategory(def)) : null;
+    if (category && category !== this.currentCategory) this.setCategory(category);
+    this.highlightSelectedBuilding(buildingId);
   }
 
   setPresetOptions(presets, onChange) {
@@ -391,7 +632,7 @@ export class UIManager {
       }
     }
   }
-  setBuildingInfo(def) {
+  setBuildInfo(def) {
     if (!this.buildInfoTitle || !this.buildInfoText) return;
     if (!def) {
       this.buildInfoTitle.textContent = '';
@@ -403,7 +644,9 @@ export class UIManager {
 
     // Prefer explicit description, otherwise auto-generate from stats/cost/upkeep/extract
     const lines = [];
-    if (def.desc) lines.push(def.desc);
+    if (def.descriptionLong) lines.push(def.descriptionLong);
+    else if (def.ui?.descriptionRu) lines.push(def.ui.descriptionRu);
+    else if (def.desc) lines.push(def.desc);
 
     const cost = def.cost ?? {};
     const costParts = Object.entries(cost).filter(([,v]) => v>0).map(([k,v]) => `${k}:${v}`);
@@ -462,6 +705,42 @@ export class UIManager {
     this.buildInfoText.textContent = lines.join('\n');
   }
 
+  setBuildingInfo(def) {
+    this.setBuildInfo(def);
+  }
+
+  setPlacementStatus({ ok, affordabilityOk, reasonsText, reasons } = {}) {
+    if (!this.buildReasonText) return;
+
+    const lines = [];
+    if (ok && affordabilityOk) {
+      lines.push('Можно строить.');
+    } else if (ok && !affordabilityOk) {
+      lines.push('Недостаточно ресурсов.');
+    }
+
+    if (typeof reasonsText === 'string' && reasonsText.trim()) {
+      lines.push(reasonsText.trim());
+    } else if (Array.isArray(reasons) && reasons.length) {
+      for (const r of reasons) {
+        lines.push(this._humanizeReason(r));
+      }
+    }
+
+    this.buildReasonText.textContent = lines.join('\n') || '—';
+  }
+
+  _humanizeReason(reason) {
+    if (!reason) return 'Причина неизвестна';
+    const base = localizePlacementReason(reason, 'ru') || reason.code || 'Причина неизвестна';
+    const d = reason.data ?? {};
+    if (reason.code === 'FORBIDDEN_SURFACE' && d.surface) return `${base}: ${d.surface}`;
+    if (reason.code === 'TOO_FAR_FROM_BUILD_ZONE') return `${base}: ${Math.ceil(d.dist ?? 0)} > ${Math.ceil(d.max ?? 0)} тайлов`;
+    if (reason.code === 'NEEDS_RESOURCE_NODE' && d.type) return `${base}: ${d.type}`;
+    if ((reason.code === 'LIMIT_REACHED_CITY' || reason.code === 'LIMIT_REACHED_PLAYER') && d.limit) return `${base} (${d.limit})`;
+    return base;
+  }
+
 
 
   highlightSelectedBuilding(id) {
@@ -472,6 +751,7 @@ export class UIManager {
   }
 
   setBuildingEnabled(id, enabled) {
+    this.enabledById.set(id, !!enabled);
     const b = this.buildButtons.find(x => x.id === id);
     if (!b) return;
     b.btn.disabled = !enabled;
