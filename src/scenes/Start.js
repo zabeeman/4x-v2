@@ -62,12 +62,23 @@ function saveDoctrineSnapshotToStorage(snapshot) {
   }
 }
 
+async function loadDoctrineCatalog() {
+  try {
+    const response = await fetch('./doctrines_catalog.json');
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export class Start extends Phaser.Scene {
   constructor() {
     super("Start");
   }
 
-  create() {
+  async create() {
     // World config
     this.cfg = { ...defaultInfiniteConfig };
     this.cfg.worldSeed = parseSeedFromUrlOrDefault(this.cfg.worldSeed);
@@ -92,7 +103,8 @@ export class Start extends Phaser.Scene {
     this.gcfg = gameConfig;
 
     // Sim data + sim
-    this.gameData = createDefaultGameData(this.gcfg);
+    const doctrineCatalog = await loadDoctrineCatalog();
+    this.gameData = createDefaultGameData(this.gcfg, doctrineCatalog);
     this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
     this._lastDoctrineSaveRev = -1;
 
