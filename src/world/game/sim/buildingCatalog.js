@@ -44,8 +44,15 @@ const zeroCosts = () => ({ gold: 0, wood: 0, metal: 0, marble: 0, glass: 0, powd
 const fillResources = (input) => ({ ...zeroCosts(), ...(input ?? {}) });
 
 const normalize = (raw) => {
+  const isExtractor = Boolean(raw.extract);
   const cost = raw.economy?.costOverride ?? PRESETS.cost[raw.economy?.costPreset] ?? zeroCosts();
   const upkeep = raw.economy?.upkeepOverride ?? PRESETS.upkeepPerMin[raw.economy?.upkeepPreset] ?? { gold: 0 };
+  const forbiddenSurfaces = new Set(raw.placementRules?.forbiddenSurfaces ?? []);
+  if (isExtractor) {
+    forbiddenSurfaces.add('water');
+    forbiddenSurfaces.add('shallow_water');
+    forbiddenSurfaces.add('deep_water');
+  }
   const addsBuildZone = true;
   const baseZoneRadiusTiles = 10;
   const configuredZoneRadius = Number(raw.zoneContribution?.radius ?? 0);
@@ -69,14 +76,19 @@ const normalize = (raw) => {
     isStarter: Boolean(raw.isStarter),
     extract: raw.extract ? { ...raw.extract } : null,
     placementRules: {
-      allowedSurfaces: raw.placementRules?.allowedSurfaces ?? null,
-      forbiddenSurfaces: raw.placementRules?.forbiddenSurfaces ?? null,
-      mustBeInsideBuildZone: raw.placementRules?.mustBeInsideBuildZone ?? true,
-      canBeOutsideBuildZone: raw.placementRules?.canBeOutsideBuildZone ?? false,
-      maxDistanceToBuildZone: raw.placementRules?.maxDistanceToBuildZone ?? 0,
-      requiresResourceNode: raw.placementRules?.requiresResourceNode
-        ? { type: String(raw.placementRules.requiresResourceNode.type).toLowerCase(), radiusTiles: raw.placementRules.requiresResourceNode.radius }
-        : null,
+      allowedSurfaces: isExtractor ? null : (raw.placementRules?.allowedSurfaces ?? null),
+      forbiddenSurfaces: forbiddenSurfaces.size > 0 ? Array.from(forbiddenSurfaces) : null,
+      mustBeInsideBuildZone: isExtractor ? false : (raw.placementRules?.mustBeInsideBuildZone ?? true),
+      canBeOutsideBuildZone: isExtractor ? true : (raw.placementRules?.canBeOutsideBuildZone ?? false),
+      maxDistanceToBuildZone: isExtractor ? 100 : (raw.placementRules?.maxDistanceToBuildZone ?? 0),
+      requiresResourceNode: isExtractor
+        ? {
+            type: String(raw.extract.resource).toLowerCase(),
+            radiusTiles: raw.placementRules?.requiresResourceNode?.radius ?? 2,
+          }
+        : (raw.placementRules?.requiresResourceNode
+          ? { type: String(raw.placementRules.requiresResourceNode.type).toLowerCase(), radiusTiles: raw.placementRules.requiresResourceNode.radius }
+          : null),
       requiresCoast: raw.placementRules?.requiresCoast ?? false,
       limit: {
         perCity: raw.unique?.perCity ? raw.unique.perCity : null,
