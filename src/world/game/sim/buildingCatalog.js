@@ -46,11 +46,12 @@ const fillResources = (input) => ({ ...zeroCosts(), ...(input ?? {}) });
 const normalize = (raw) => {
   const cost = raw.economy?.costOverride ?? PRESETS.cost[raw.economy?.costPreset] ?? zeroCosts();
   const upkeep = raw.economy?.upkeepOverride ?? PRESETS.upkeepPerMin[raw.economy?.upkeepPreset] ?? { gold: 0 };
+  const addsBuildZone = raw.zoneContribution?.addsBuildZone ?? false;
   const baseZoneRadiusTiles = 10;
   const configuredZoneRadius = Number(raw.zoneContribution?.radius ?? 0);
-  const zoneRadiusTiles = configuredZoneRadius > 0
-    ? configuredZoneRadius
-    : baseZoneRadiusTiles;
+  const zoneRadiusTiles = addsBuildZone
+    ? (configuredZoneRadius > 0 ? configuredZoneRadius : baseZoneRadiusTiles)
+    : 0;
 
   return {
     id: raw.id,
@@ -64,6 +65,8 @@ const normalize = (raw) => {
     buildCost: fillResources(cost),
     buildTimeSec: PRESETS.buildTimeSec[raw.economy?.buildTimePreset] ?? 20,
     upkeepPerMin: fillResources(upkeep),
+    isHub: Boolean(raw.isHub),
+    isStarter: Boolean(raw.isStarter),
     placementRules: {
       allowedSurfaces: raw.placementRules?.allowedSurfaces ?? null,
       forbiddenSurfaces: raw.placementRules?.forbiddenSurfaces ?? null,
@@ -80,7 +83,7 @@ const normalize = (raw) => {
       },
     },
     buildZone: {
-      addsBuildZone: true,
+      addsBuildZone,
       zoneShape: raw.zoneContribution?.shape === 'NONE' ? 'TILE_DISK' : (raw.zoneContribution?.shape ?? 'TILE_DISK'),
       zoneRadiusTiles,
       zonePriority: raw.zoneContribution?.priority ?? 0,
@@ -95,7 +98,7 @@ const normalize = (raw) => {
 };
 
 const RAW_BUILDINGS = [
-  { id: 'GOV_TOWN_HALL', category: 'GOVERNANCE', tier: 1, size: { w: 2, h: 2 }, unique: { perCity: 1, perPlayer: 0 }, economy: { costPreset: 'HIGH', upkeepPreset: 'MED', buildTimePreset: 'SLOW' }, placementRules: { mustBeInsideBuildZone: false, canBeOutsideBuildZone: true, allowedSurfaces: ['land', 'road'], forbiddenSurfaces: ['water'] }, zoneContribution: { addsBuildZone: true, shape: 'TILE_DISK', radius: 20, priority: 100 }, effects: [{ type: 'TaxEfficiency', mode: 'ADD', value: 0.05, scope: 'City', radius: 0, stacking: 'ADD' }, { type: 'BuildQueueSlots', mode: 'ADD', value: 1, scope: 'City', radius: 0, stacking: 'ADD' }], ui: { nameRu: 'Городская управа (Ратуша)', shortRu: 'Якорь города: управление, сметы, разрешения.', descriptionRu: 'Главный дом городского правления: здесь ведутся книги сборов и выдаются разрешения.', tagsRu: ['присутственное место', 'основа'] } },
+  { id: 'GOV_TOWN_HALL', isHub: true, category: 'GOVERNANCE', tier: 1, size: { w: 2, h: 2 }, unique: { perCity: 1, perPlayer: 0 }, economy: { costPreset: 'HIGH', upkeepPreset: 'MED', buildTimePreset: 'SLOW' }, placementRules: { mustBeInsideBuildZone: false, canBeOutsideBuildZone: false, allowedSurfaces: ['land', 'road'], forbiddenSurfaces: ['water'] }, zoneContribution: { addsBuildZone: true, shape: 'TILE_DISK', radius: 20, priority: 100 }, effects: [{ type: 'TaxEfficiency', mode: 'ADD', value: 0.05, scope: 'City', radius: 0, stacking: 'ADD' }, { type: 'BuildQueueSlots', mode: 'ADD', value: 1, scope: 'City', radius: 0, stacking: 'ADD' }], ui: { nameRu: 'Городская управа (Ратуша)', shortRu: 'Якорь города: управление, сметы, разрешения.', descriptionRu: 'Главный дом городского правления: здесь ведутся книги сборов и выдаются разрешения.', tagsRu: ['присутственное место', 'основа'] } },
   { id: 'GOV_CHANCELLERY', category: 'GOVERNANCE', tier: 1, size: { w: 1, h: 2 }, unique: { perCity: 1, perPlayer: 0 }, economy: { costPreset: 'MED', upkeepPreset: 'MED', buildTimePreset: 'NORMAL' }, placementRules: { mustBeInsideBuildZone: true, allowedSurfaces: ['land', 'road'], forbiddenSurfaces: ['water'] }, zoneContribution: { addsBuildZone: false, shape: 'NONE', radius: 0, priority: 0 }, effects: [{ type: 'BuildSpeed', mode: 'MUL', value: 1.1, scope: 'City', radius: 0, stacking: 'MUL' }, { type: 'Corruption', mode: 'ADD', value: 1, scope: 'City', radius: 0, stacking: 'ADD' }], ui: { nameRu: 'Канцелярия', shortRu: 'Дела идут быстрее — но приписки растут.', descriptionRu: 'Контора писарей и делопроизводителей ускоряет документы и сметы.', tagsRu: ['делопроизводство', 'ускорение'] } },
   { id: 'GOV_COURTHOUSE', category: 'GOVERNANCE', tier: 2, size: { w: 2, h: 2 }, unique: { perCity: 1, perPlayer: 0 }, economy: { costPreset: 'HIGH', upkeepPreset: 'HIGH', buildTimePreset: 'SLOW' }, placementRules: { mustBeInsideBuildZone: true, allowedSurfaces: ['land', 'road'], forbiddenSurfaces: ['water'] }, zoneContribution: { addsBuildZone: false, shape: 'NONE', radius: 0, priority: 0 }, effects: [{ type: 'Crime', mode: 'ADD', value: -2, scope: 'City', radius: 0, stacking: 'ADD' }, { type: 'Corruption', mode: 'ADD', value: -2, scope: 'City', radius: 0, stacking: 'ADD' }], ui: { nameRu: 'Окружной суд', shortRu: 'Давит злоупотребления — стоит дорого.', descriptionRu: 'Присутственное место, где тяжбы и злоупотребления решаются печатью закона.', tagsRu: ['правосудие', 'порядок'] } },
   { id: 'GOV_CENSUS_BUREAU', category: 'GOVERNANCE', tier: 2, size: { w: 2, h: 2 }, unique: { perCity: 1, perPlayer: 0 }, economy: { costPreset: 'HIGH', upkeepPreset: 'HIGH', buildTimePreset: 'SLOW' }, placementRules: { mustBeInsideBuildZone: true, allowedSurfaces: ['land', 'road'], forbiddenSurfaces: ['water'] }, zoneContribution: { addsBuildZone: false, shape: 'NONE', radius: 0, priority: 0 }, effects: [{ type: 'TaxEfficiency', mode: 'MUL', value: 1.2, scope: 'City', radius: 0, stacking: 'MUL' }, { type: 'Happiness', mode: 'ADD', value: -2, scope: 'City', radius: 0, stacking: 'ADD' }, { type: 'EventRisk_Revolt', mode: 'ADD', value: 2, scope: 'City', radius: 0, stacking: 'ADD' }, { type: 'Corruption', mode: 'ADD', value: 1, scope: 'City', radius: 0, stacking: 'ADD' }], ui: { nameRu: 'Статистическое бюро (Перепись)', shortRu: 'Казна видит всё — народ ворчит.', descriptionRu: 'Учёт дворов и промыслов помогает налогам, но вызывает недовольство.', tagsRu: ['учёт', 'жёсткая рука', 'риск волнений'] } },
