@@ -72,6 +72,10 @@ export const gameConfig = {
     disallowSurfaces: new Set(["deep_water", "shallow_water", "coast_cliff"]),
   },
 
+
+  features: {
+    enableLegacyPresets: false,
+  },
   // UI
   ui: {
     depth: 2000,

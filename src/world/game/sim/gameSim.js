@@ -25,7 +25,22 @@ export class GameSim {
     this.state = {
       spawn: null,
       governmentId: this.data.balance.defaultGovernmentId ?? 'default',
-      selectedDoctrines: [],
+      doctrineLoadout: {
+        startingPointsTotal: this.data.doctrineConfig?.startPoints ?? 5,
+        selectedDoctrineIds: [],
+        pendingDoctrineIds: [],
+        lastReformTurn: -1,
+        reformCooldownUntilTurn: 0,
+      },
+      doctrineState: {
+        phase: 'initial',
+        presetId: 'custom',
+        legacySelectedPreset: null,
+      },
+      reform: null,
+      reformProject: null,
+      simTimeMs: 0,
+      turn: 0,
 
       resources: { ...this.data.balance.startingResources },
 
@@ -579,35 +594,266 @@ export class GameSim {
 
   // --- Doctrines ---
 
+  _activeDoctrineIds() {
+    return this.state.doctrineLoadout.selectedDoctrineIds ?? [];
+  }
+
+  _editableDoctrineIds() {
+    const phase = this.state.doctrineState?.phase ?? 'locked';
+    if (phase === 'initial' || phase === 'planning') return this.state.doctrineLoadout.pendingDoctrineIds ?? [];
+    return this._activeDoctrineIds();
+  }
+
   getDoctrineGroups() {
     const groups = new Map();
     for (const d of this.data.doctrines) {
-      const g = d.choiceGroup ?? 'default';
+      const g = d.category ?? 'other';
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(d);
     }
     return groups;
   }
 
-  canSelectDoctrine(doctrineId) {
-    const d = this.data.doctrines.find(x => x.id === doctrineId);
-    if (!d) return false;
-    const g = d.choiceGroup;
-    if (!g) return true;
-    for (const id of this.state.selectedDoctrines) {
-      const dd = this.data.doctrines.find(x => x.id === id);
-      if (dd?.choiceGroup === g && dd.id !== doctrineId) return false;
+  _doctrineConfig() {
+    return this.data.doctrineConfig ?? {};
+  }
+
+  getDoctrinePointsSummary(list = this._editableDoctrineIds()) {
+    const budget = this.state.doctrineLoadout.startingPointsTotal ?? this._doctrineConfig().startPoints ?? 5;
+    let spent = 0;
+    for (const id of list) {
+      const d = this.data.doctrines.find((x) => x.id === id);
+      spent += d?.costPoints ?? 0;
     }
+    return { spent, budget, remaining: budget - spent };
+  }
+
+  getDoctrineAvailability(doctrineId, list = this._editableDoctrineIds()) {
+    const d = this.data.doctrines.find((x) => x.id === doctrineId);
+    if (!d) return { ok: false, status: 'forbidden', reason: 'UNKNOWN' };
+
+    const phase = this.state.doctrineState?.phase ?? 'locked';
+    if (!['initial', 'planning'].includes(phase)) return { ok: false, status: 'forbidden', reason: 'LOCKED' };
+
+    const selected = list.includes(doctrineId);
+    if (selected) return { ok: true, status: 'selected', reason: null };
+
+    const points = this.getDoctrinePointsSummary(list);
+    if (points.spent + (d.costPoints ?? 0) > points.budget) return { ok: false, status: 'unavailable', reason: 'NOT_ENOUGH_POINTS' };
+
+    const groups = d.exclusiveGroups ?? [];
+    if (groups.length) {
+      for (const id of list) {
+        const dd = this.data.doctrines.find((x) => x.id === id);
+        if (!dd || dd.id === doctrineId) continue;
+        if ((dd.exclusiveGroups ?? []).some((g) => groups.includes(g))) return { ok: false, status: 'forbidden', reason: 'EXCLUSIVE_CONFLICT' };
+      }
+    }
+
+    for (const req of (d.requires ?? [])) if (!list.includes(req)) return { ok: false, status: 'forbidden', reason: 'REQUIRES' };
+    for (const f of (d.forbids ?? [])) if (list.includes(f)) return { ok: false, status: 'forbidden', reason: 'FORBIDS' };
+
+    const maxPerCategory = this._doctrineConfig().maxPerCategory ?? null;
+    if (Number.isFinite(maxPerCategory) && maxPerCategory > 0) {
+      const used = list.map((id) => this.data.doctrines.find((x) => x.id === id)).filter(Boolean).filter((x) => x.category === d.category).length;
+      if (used >= maxPerCategory) return { ok: false, status: 'forbidden', reason: 'MAX_PER_CATEGORY' };
+    }
+
+    return { ok: true, status: 'available', reason: null };
+  }
+
+  canSelectDoctrine(doctrineId, list = this._editableDoctrineIds()) {
+    return this.getDoctrineAvailability(doctrineId, list).ok;
+  }
+
+  toggleDoctrine(doctrineId) {
+    const phase = this.state.doctrineState?.phase ?? 'locked';
+    if (!['initial', 'planning'].includes(phase)) return false;
+
+    const target = this._editableDoctrineIds();
+    const idx = target.indexOf(doctrineId);
+    if (idx >= 0) {
+      target.splice(idx, 1);
+      this.state.doctrineState.presetId = 'custom';
+      this._bump();
+      return true;
+    }
+
+    if (!this.canSelectDoctrine(doctrineId, target)) return false;
+    target.push(doctrineId);
+    this.state.doctrineState.presetId = 'custom';
+    this._bump();
     return true;
   }
 
-  selectDoctrine(doctrineId) {
-    if (!this.canSelectDoctrine(doctrineId)) return false;
-    if (this.state.selectedDoctrines.includes(doctrineId)) return true;
-    this.state.selectedDoctrines.push(doctrineId);
+  applyDoctrinePreset(presetId) {
+    const phase = this.state.doctrineState?.phase ?? 'locked';
+    if (!['initial', 'planning'].includes(phase)) return false;
+
+    if (presetId === 'custom') {
+      this.state.doctrineState.presetId = 'custom';
+      this._bump();
+      return true;
+    }
+
+    const preset = (this.data.doctrinePresets ?? []).find((p) => p.id === presetId);
+    if (!preset) return false;
+
+    const next = [];
+    for (const id of (preset.doctrineIds ?? [])) {
+      if (!this.canSelectDoctrine(id, next)) return false;
+      next.push(id);
+    }
+
+    this.state.doctrineLoadout.pendingDoctrineIds = next;
+    this.state.doctrineState.presetId = presetId;
+    this._bump();
+    return true;
+  }
+
+  resetDoctrineDraft() {
+    const phase = this.state.doctrineState?.phase ?? 'locked';
+    if (phase === 'initial') {
+      this.state.doctrineLoadout.pendingDoctrineIds = [];
+      this.state.doctrineState.presetId = 'custom';
+      this._bump();
+      return true;
+    }
+    if (phase === 'planning') {
+      this.state.doctrineLoadout.pendingDoctrineIds = [...this._activeDoctrineIds()];
+      this.state.doctrineState.presetId = 'custom';
+      this._bump();
+      return true;
+    }
+    return false;
+  }
+
+  beginDoctrinePlanning() {
+    if ((this.state.doctrineState?.phase ?? 'locked') !== 'locked') return false;
+    this.state.doctrineState.phase = 'planning';
+    this.state.doctrineState.presetId = 'custom';
+    this.state.doctrineLoadout.pendingDoctrineIds = [...this._activeDoctrineIds()];
+    this.state.reformProject = null;
+    this._bump();
+    return true;
+  }
+
+  cancelDoctrinePlanning() {
+    if ((this.state.doctrineState?.phase ?? 'locked') !== 'planning') return false;
+    this.state.doctrineState.phase = 'locked';
+    this.state.doctrineLoadout.pendingDoctrineIds = [];
+    this.state.reformProject = null;
+    this._bump();
+    return true;
+  }
+
+  _calcReformProject(fromIds, toIds) {
+    const cfg = this._doctrineConfig();
+    const from = new Set(fromIds);
+    const to = new Set(toIds);
+    const symDiff = [...new Set([...fromIds, ...toIds])].filter((id) => from.has(id) !== to.has(id));
+    const changedCount = symDiff.length;
+    const changedPoints = symDiff.reduce((acc, id) => acc + (this.data.doctrines.find((d) => d.id === id)?.costPoints ?? 0), 0);
+    const extremeCount = toIds
+      .map((id) => this.data.doctrines.find((d) => d.id === id))
+      .filter((d) => d?.balanceClass === 'EXTREME').length;
+
+    const durationTurns = (cfg.reformBaseDurationTurns ?? 3) + changedPoints;
+    const cost = {
+      gold: (cfg.reformBaseGold ?? 120) + (cfg.reformGoldPerPoint ?? 30) * changedPoints + (cfg.reformGoldPerExtreme ?? 80) * extremeCount,
+      marble: (cfg.reformBaseMarble ?? 0) + (cfg.reformMarblePerDoctrine ?? 2) * changedCount,
+      metal: (cfg.reformBaseMetal ?? 0) + (cfg.reformMetalPerPoint ?? 1) * changedPoints,
+      glass: (cfg.reformBaseGlass ?? 0) + (cfg.reformGlassPerDoctrine ?? 1) * changedCount,
+      wood: (cfg.reformBaseWood ?? 0) + (cfg.reformWoodPerDoctrine ?? 2) * changedCount,
+      powder: (cfg.reformBasePowder ?? 0) + (cfg.reformPowderPerExtreme ?? 0) * extremeCount,
+    };
+
+    const temporaryModifiers = cfg.reformTemporaryModifiers ?? [
+      { stat: 'HappinessPct', type: 'AddPct', value: -0.1 },
+      { stat: 'BuildSpeedPct', type: 'AddPct', value: -0.1 },
+      { stat: 'WarWeariness', type: 'AddFlat', value: 1 },
+    ];
+
+    return {
+      id: nowId('reform_project'),
+      fromDoctrineIds: [...fromIds],
+      toDoctrineIds: [...toIds],
+      changedPoints,
+      durationTurns,
+      cost,
+      temporaryModifiers,
+      startTurn: null,
+      endTurn: null,
+      state: 'PROPOSED',
+      cooldownTurns: cfg.reformCooldownTurns ?? 180,
+      extremeCount,
+    };
+  }
+
+  proposeDoctrineReform() {
+    if ((this.state.doctrineState?.phase ?? 'locked') !== 'planning') return false;
+    const from = this._activeDoctrineIds();
+    const to = this._editableDoctrineIds();
+    this.state.reformProject = this._calcReformProject(from, to);
+    this._bump();
+    return true;
+  }
+
+  confirmDoctrineReform() {
+    const project = this.state.reformProject;
+    if (!project || project.state !== 'PROPOSED') return false;
+    if (this.state.turn < (this.state.doctrineLoadout.reformCooldownUntilTurn ?? 0)) return false;
+
+    for (const [k, v] of Object.entries(project.cost ?? {})) {
+      if ((this.state.resources[k] ?? 0) < v) return false;
+    }
+    for (const [k, v] of Object.entries(project.cost ?? {})) {
+      this.state.resources[k] = (this.state.resources[k] ?? 0) - v;
+    }
+
+    project.state = 'ACTIVE';
+    project.startTurn = this.state.turn;
+    project.endTurn = this.state.turn + project.durationTurns;
+    this.state.reformProject = project;
+    this.state.reform = { state: 'ACTIVE', temporaryModifiers: project.temporaryModifiers ?? [] };
+    this.state.doctrineState.phase = 'reform';
+    this._bump();
+    return true;
+  }
+
+  finalizeInitialDoctrines() {
+    if ((this.state.doctrineState?.phase ?? 'locked') !== 'initial') return false;
+    this.state.doctrineLoadout.selectedDoctrineIds = [...this.state.doctrineLoadout.pendingDoctrineIds];
+    this.state.doctrineLoadout.pendingDoctrineIds = [];
+    this.state.doctrineState.phase = 'locked';
     this.recomputeDerived();
     this._bump();
     return true;
+  }
+
+  getDoctrineScreenState() {
+    const points = this.getDoctrinePointsSummary();
+    const selectedIds = [...this._editableDoctrineIds()];
+    const activeIds = [...this._activeDoctrineIds()];
+    const groups = Array.from(this.getDoctrineGroups().entries());
+    const categoryOrder = this._doctrineConfig().categories ?? ['economy', 'governance', 'society', 'military', 'science', 'industry', 'diplomacy'];
+
+    return {
+      groups,
+      categoryOrder,
+      selectedIds,
+      activeIds,
+      canPick: (id) => this.canSelectDoctrine(id),
+      availability: (id) => this.getDoctrineAvailability(id),
+      points,
+      phase: this.state.doctrineState?.phase ?? 'locked',
+      presetId: this.state.doctrineState?.presetId ?? 'custom',
+      presets: this.data.doctrinePresets ?? [],
+      reformProject: this.state.reformProject,
+      canProposeReform: (this.state.doctrineState?.phase ?? 'locked') === 'planning',
+      canConfirmReform: (this.state.reformProject?.state ?? null) === 'PROPOSED',
+      cooldownTurnsLeft: Math.max(0, (this.state.doctrineLoadout.reformCooldownUntilTurn ?? 0) - this.state.turn),
+    };
   }
 
   // --- Manual trade routes ---
@@ -657,6 +903,19 @@ export class GameSim {
   }
 
   _tick(minFrac) {
+    this.state.simTimeMs += Math.floor(minFrac * 60000);
+    this.state.turn += 1;
+
+    if (this.state.reformProject?.state === 'ACTIVE' && this.state.turn >= (this.state.reformProject.endTurn ?? 0)) {
+      this.state.doctrineLoadout.selectedDoctrineIds = [...(this.state.reformProject.toDoctrineIds ?? [])];
+      this.state.doctrineLoadout.pendingDoctrineIds = [];
+      this.state.doctrineLoadout.lastReformTurn = this.state.turn;
+      this.state.doctrineLoadout.reformCooldownUntilTurn = this.state.turn + (this.state.reformProject.cooldownTurns ?? (this._doctrineConfig().reformCooldownTurns ?? 180));
+      this.state.reformProject.state = 'COMPLETED';
+      this.state.reform = null;
+      this.state.doctrineState.phase = 'locked';
+    }
+
     this.recomputeDerived();
 
     if (this.state.cheats?.infiniteResources) {
@@ -709,6 +968,7 @@ export class GameSim {
     // Trade income
     gold += this.state.trade.goldPerMin;
 
+
     gold -= upkeepGoldPerMin;
 
     this.state.perMin.gold = gold;
@@ -754,33 +1014,108 @@ export class GameSim {
     return up;
   }
 
+  getDoctrineBuildingRecommendations() {
+    const selected = this._activeDoctrineIds()
+      .map((id) => this.data.doctrines.find((d) => d.id === id))
+      .filter(Boolean);
+
+    const recommendedIds = new Set();
+    const tags = new Set();
+    for (const d of selected) {
+      for (const id of (d.recommendedBuildings ?? [])) recommendedIds.add(id);
+      for (const t of (d.recommendedBuildingTags ?? [])) tags.add(String(t).toLowerCase());
+
+      const taxBias = (d.effects ?? []).some((e) => e.stat === 'TaxEfficiency' && (e.value ?? 0) > 0);
+      if (taxBias) {
+        tags.add('казна');
+        tags.add('подат');
+      }
+    }
+
+    const catalogue = this.getCatalogue();
+    for (const b of catalogue) {
+      const blob = `${b.id} ${b.name ?? ''} ${(b.ui?.nameRu ?? '')} ${(b.ui?.tagsRu ?? []).join(' ')} ${(b.category ?? '')}`.toLowerCase();
+      for (const t of tags) {
+        if (blob.includes(t)) {
+          recommendedIds.add(b.id);
+          break;
+        }
+      }
+    }
+
+    return {
+      ids: Array.from(recommendedIds),
+      tags: Array.from(tags),
+      hintText: tags.size > 0 ? `Согласно курсу державы полезно: ${Array.from(tags).slice(0, 4).join(', ')}` : 'Согласно курсу державы полезно: ориентируйся на текущие доктрины',
+    };
+  }
+
+  exportDoctrineSnapshot() {
+    return {
+      selectedDoctrineIds: [...(this.state.doctrineLoadout?.selectedDoctrineIds ?? [])],
+      startingPointsTotal: this.state.doctrineLoadout?.startingPointsTotal ?? this._doctrineConfig().startPoints ?? 5,
+      reformProject: this.state.reformProject ? { ...this.state.reformProject } : null,
+      reformCooldownUntilTurn: this.state.doctrineLoadout?.reformCooldownUntilTurn ?? 0,
+      turn: this.state.turn ?? 0,
+    };
+  }
+
+  importDoctrineSnapshot(snapshot = {}) {
+    const sel = Array.isArray(snapshot.selectedDoctrineIds) ? snapshot.selectedDoctrineIds.filter((id) => this.data.doctrines.some((d) => d.id === id)) : [];
+    this.state.doctrineLoadout.startingPointsTotal = Number.isFinite(snapshot.startingPointsTotal) ? snapshot.startingPointsTotal : (this._doctrineConfig().startPoints ?? 5);
+    this.state.doctrineLoadout.selectedDoctrineIds = sel;
+    this.state.doctrineLoadout.pendingDoctrineIds = [];
+    this.state.doctrineLoadout.reformCooldownUntilTurn = Number.isFinite(snapshot.reformCooldownUntilTurn) ? snapshot.reformCooldownUntilTurn : 0;
+    this.state.turn = Number.isFinite(snapshot.turn) ? snapshot.turn : 0;
+
+    this.state.reformProject = snapshot.reformProject ?? null;
+    if (this.state.reformProject?.state === 'ACTIVE') {
+      this.state.doctrineState.phase = 'reform';
+      this.state.reform = { state: 'ACTIVE', temporaryModifiers: this.state.reformProject.temporaryModifiers ?? [] };
+    } else {
+      this.state.doctrineState.phase = 'locked';
+      this.state.reform = null;
+    }
+
+    if (snapshot.legacyPresetId) {
+      console.info('legacy preset ignored');
+    }
+
+    this.recomputeDerived();
+    this._bump();
+  }
+
   // --- Advisor ---
 
-  recommendNextBuilding(presetId = 'Balanced') {
-    const preset = this.data.presets.find(p => p.id === presetId) ?? this.data.presets[0];
-    if (!preset) return null;
+  recommendNextBuilding() {
+    const rec = this.getDoctrineBuildingRecommendations();
+    const direct = new Set(rec.ids ?? []);
+    const tags = new Set((rec.tags ?? []).map((t) => String(t).toLowerCase()));
 
-    const weights = preset.weights ?? {};
-    const best = { id: null, score: -Infinity };
+    const defs = this.getCatalogue().filter((b) => !b.isStarter);
+    if (defs.length === 0) return null;
 
-    for (const b of this.data.buildings) {
-      if (b.isStarter) continue;
-      let s = 0;
+    let best = { id: null, score: -Infinity };
+    for (const b of defs) {
+      let score = 0;
+      if (direct.has(b.id)) score += 10;
+
+      if (tags.size > 0) {
+        const blob = `${b.category ?? ''} ${(b.ui?.tagsRu ?? []).join(' ')} ${b.name ?? ''}`.toLowerCase();
+        for (const t of tags) if (blob.includes(t)) score += 3;
+      }
+
       for (const m of (b.mods ?? [])) {
-        const w = weights[m.stat] ?? 0;
-        if (m.type === 'AddPct') s += w * m.value;
-        else if (m.type === 'Mul') s += w * (m.value - 1);
-        else if (m.type === 'AddFlat') s += w * m.value;
+        if (m.stat === 'GoldPerMinPct' || m.stat === 'ResourceYieldPct') score += 0.5;
       }
-      const cost = b.cost?.gold ?? 0;
-      s -= (preset.costPenalty ?? 0.002) * cost;
 
-      if (s > best.score) {
-        best.id = b.id;
-        best.score = s;
-      }
+      const cost = b.cost?.gold ?? 0;
+      score -= 0.0015 * cost;
+
+      if (score > best.score) best = { id: b.id, score };
     }
 
     return best.id;
   }
+
 }

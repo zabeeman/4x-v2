@@ -29,10 +29,21 @@ export class UIManager {
     this.onPickBuilding = null;
     this.enabledById = new Map();
     this.selectedBuildingId = null;
+    this.recommendedBuildingIds = new Set();
+    this.recommendationHintText = '';
+    this.buildRecommendBanner = null;
 
-    this.presetSelect = null;
     this.recoBtn = null;
+    this.screenBuildBtn = null;
+    this.screenDoctrineBtn = null;
+    this.buildScreenWrap = null;
+    this.doctrineScreenWrap = null;
     this.doctrineWrap = null;
+    this.doctrinePresetSelect = null;
+    this.doctrineStatus = null;
+    this.currentScreen = 'build';
+    this.doctrineCategory = 'economy';
+    this.doctrineFocusId = null;
 
     // overlays
     this.chkDistrict = null;
@@ -160,6 +171,8 @@ export class UIManager {
 }
 .ui-btn:hover { filter: brightness(1.08); }
 .ui-btn.selected { background: rgba(42,157,143,0.95); }
+.ui-card.recommended { border-color: rgba(74,222,128,0.9); box-shadow: inset 0 0 0 1px rgba(74,222,128,0.65); }
+.ui-reco-banner { font-size: 12px; opacity: 0.95; color: #b7f7c6; margin: 6px 0; }
 .ui-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -172,6 +185,8 @@ export class UIManager {
 .ui-pill { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 6px 10px; cursor:pointer; font-size: 12px; }
 .ui-pill.selected { background: rgba(42,157,143,0.95); }
 .ui-pill.locked { opacity: 0.35; cursor:not-allowed; }
+.ui-pill.unavailable { border-color: rgba(255,196,0,0.8); }
+.ui-pill.forbidden { border-color: rgba(255,90,90,0.85); }
 .ui-check { display:flex; gap:6px; align-items:center; font-size: 12px; opacity: 0.9; }
 .ui-check input { transform: translateY(1px); }
 .ui-status { font-size: 12px; opacity: 0.9; margin-top: 6px; }
@@ -193,11 +208,22 @@ export class UIManager {
     build.id = "ui-build";
 
     const title = el("div", "title", build);
-    title.textContent = "Стройка";
+    title.textContent = "Управление";
 
-    this.buildTabRow = el('div', 'tabs', build);
+    const screenRow = el('div', 'ui-row', build);
+    this.screenBuildBtn = el('button', 'ui-btn selected', screenRow);
+    this.screenBuildBtn.textContent = 'Каталог зданий';
+    this.screenDoctrineBtn = el('button', 'ui-btn', screenRow);
+    this.screenDoctrineBtn.textContent = 'Доктрины';
 
-    this.buildGrid = el("div", "grid", build);
+    this.buildScreenWrap = el('div', '', build);
+    this.doctrineScreenWrap = el('div', '', build);
+    this.doctrineScreenWrap.style.display = 'none';
+
+    this.buildTabRow = el('div', 'tabs', this.buildScreenWrap);
+    this.buildRecommendBanner = el('div', 'ui-reco-banner', this.buildScreenWrap);
+
+    this.buildGrid = el("div", "grid", this.buildScreenWrap);
     this.buildGrid.addEventListener("click", (ev) => {
       const target = ev.target;
       if (!(target instanceof Element)) return;
@@ -210,34 +236,28 @@ export class UIManager {
     });
 
     // Building help
-    const helpTitle = el('div', 'ui-mini', build);
+    const helpTitle = el('div', 'ui-mini', this.buildScreenWrap);
     helpTitle.textContent = 'Справка по зданию:';
-    this.buildInfoTitle = el('div', 'ui-status', build);
+    this.buildInfoTitle = el('div', 'ui-status', this.buildScreenWrap);
     this.buildInfoTitle.style.fontWeight = '600';
-    this.buildInfoText = el('div', 'ui-status', build);
+    this.buildInfoText = el('div', 'ui-status', this.buildScreenWrap);
     this.buildInfoText.style.whiteSpace = 'pre-wrap';
     this.buildInfoText.style.opacity = '0.9';
 
-    const reasonTitle = el('div', 'ui-mini', build);
+    const reasonTitle = el('div', 'ui-mini', this.buildScreenWrap);
     reasonTitle.textContent = 'Причина недоступности (по наведению):';
-    this.buildReasonText = el('div', 'ui-reasons', build);
+    this.buildReasonText = el('div', 'ui-reasons', this.buildScreenWrap);
     this.buildReasonText.textContent = '—';
 
-    // Preset row
-    const row = el('div', 'ui-row', build);
-    const lbl = el('div', 'ui-mini', row);
-    lbl.textContent = 'Пресет:';
-
-    this.presetSelect = el('select', 'ui-select', row);
-
+    const row = el('div', 'ui-row', this.buildScreenWrap);
     this.recoBtn = el('button', 'ui-btn', row);
-    this.recoBtn.textContent = 'Рекомендовать';
+    this.recoBtn.textContent = 'Рекомендовать по доктринам';
 
     // Overlays
-    const ovTitle = el('div', 'ui-mini', build);
+    const ovTitle = el('div', 'ui-mini', this.buildScreenWrap);
     ovTitle.textContent = 'Оверлеи:';
 
-    const ovRow = el('div', 'ui-row', build);
+    const ovRow = el('div', 'ui-row', this.buildScreenWrap);
     const dWrap = el('label', 'ui-check', ovRow);
     this.chkDistrict = el('input', '', dWrap);
     this.chkDistrict.type = 'checkbox';
@@ -263,10 +283,10 @@ export class UIManager {
     el('span', '', pWrap).textContent = 'Размещение';
 
     // Demolish + cheats
-    const extraTitle = el('div', 'ui-mini', build);
+    const extraTitle = el('div', 'ui-mini', this.buildScreenWrap);
     extraTitle.textContent = 'Инструменты:';
 
-    const extraRow = el('div', 'ui-row', build);
+    const extraRow = el('div', 'ui-row', this.buildScreenWrap);
     this.btnDemolish = el('button', 'ui-btn', extraRow);
     this.btnDemolish.textContent = 'Снос: выкл';
 
@@ -277,10 +297,10 @@ export class UIManager {
     el('span', '', infWrap).textContent = '∞ ресурсы';
 
     // Trade routes
-    const tTitle = el('div', 'ui-mini', build);
+    const tTitle = el('div', 'ui-mini', this.buildScreenWrap);
     tTitle.textContent = 'Торговые маршруты (клик по хабам):';
 
-    const trRow = el('div', 'ui-row', build);
+    const trRow = el('div', 'ui-row', this.buildScreenWrap);
     this.routeLandBtn = el('button', 'ui-btn', trRow);
     this.routeLandBtn.textContent = 'Маршрут по земле';
 
@@ -290,16 +310,26 @@ export class UIManager {
     this.routeCancelBtn = el('button', 'ui-btn', trRow);
     this.routeCancelBtn.textContent = 'Отмена';
 
-    this.routeStatus = el('div', 'ui-status', build);
+    this.routeStatus = el('div', 'ui-status', this.buildScreenWrap);
     this.routeStatus.textContent = '';
 
-    this.routeListWrap = el('div', 'ui-status', build);
+    this.routeListWrap = el('div', 'ui-status', this.buildScreenWrap);
     this.routeListWrap.style.marginTop = '8px';
 
-    // Doctrines
-    const dTitle = el('div', 'ui-mini', build);
-    dTitle.textContent = 'Доктрины:';
-    this.doctrineWrap = el('div', 'ui-doctrines', build);
+    // Doctrines screen
+    const dTitle = el('div', 'ui-mini', this.doctrineScreenWrap);
+    dTitle.textContent = 'Доктрины и реформы:';
+
+    const presetRow = el('div', 'ui-row', this.doctrineScreenWrap);
+    const pl = el('div', 'ui-mini', presetRow);
+    pl.textContent = 'Готовый билд:';
+    this.doctrinePresetSelect = el('select', 'ui-select', presetRow);
+
+    this.doctrineStatus = el('div', 'ui-status', this.doctrineScreenWrap);
+    this.doctrineWrap = el('div', 'ui-doctrines', this.doctrineScreenWrap);
+
+    this.screenBuildBtn.onclick = () => this.setScreen('build');
+    this.screenDoctrineBtn.onclick = () => this.setScreen('doctrine');
   }
 
   isPointerOverUI(pointer) {
@@ -397,6 +427,11 @@ export class UIManager {
       el('div', 'ui-card-effects', btn).textContent = `Эффект: ${this._summarizeEffects(t)}`;
       el('div', 'ui-card-req', btn).textContent = `Требования: ${this._summarizeRequirements(t)}`;
 
+      if (this.recommendedBuildingIds.has(t.id)) {
+        btn.classList.add('recommended');
+        el('div', 'ui-card-meta', btn).textContent = 'Рекомендовано доктринами';
+      }
+
       btn.disabled = !this.enabledById.get(t.id);
 
       this.buildGrid.appendChild(btn);
@@ -479,6 +514,15 @@ export class UIManager {
     return req.join('; ') || 'нет';
   }
 
+  setDoctrineRecommendations({ ids, hintText } = {}) {
+    this.recommendedBuildingIds = new Set(ids ?? []);
+    this.recommendationHintText = hintText ?? '';
+    if (this.buildRecommendBanner) {
+      this.buildRecommendBanner.textContent = this.recommendationHintText || '';
+    }
+    this._renderBuildingCards();
+  }
+
   setCategory(category) {
     if (!CATEGORY_ORDER.includes(category)) return;
     this.currentCategory = category;
@@ -492,18 +536,6 @@ export class UIManager {
     const category = def ? (def.category ?? this._inferCategory(def)) : null;
     if (category && category !== this.currentCategory) this.setCategory(category);
     this.highlightSelectedBuilding(buildingId);
-  }
-
-  setPresetOptions(presets, onChange) {
-    if (!this.presetSelect) return;
-    this.presetSelect.innerHTML = '';
-    for (const p of presets) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name ?? p.id;
-      this.presetSelect.appendChild(opt);
-    }
-    this.presetSelect.onchange = () => onChange(this.presetSelect.value);
   }
 
   setRecommendHandler(fn) {
@@ -601,27 +633,205 @@ export class UIManager {
     this.routeListWrap.appendChild(wrap);
   }
 
-  renderDoctrines(groups, selectedIds, canPickFn, onPick) {
+  setScreen(screen) {
+    this.currentScreen = screen === 'doctrine' ? 'doctrine' : 'build';
+    if (this.buildScreenWrap) this.buildScreenWrap.style.display = this.currentScreen === 'build' ? '' : 'none';
+    if (this.doctrineScreenWrap) this.doctrineScreenWrap.style.display = this.currentScreen === 'doctrine' ? '' : 'none';
+    if (this.screenBuildBtn) this.screenBuildBtn.classList.toggle('selected', this.currentScreen === 'build');
+    if (this.screenDoctrineBtn) this.screenDoctrineBtn.classList.toggle('selected', this.currentScreen === 'doctrine');
+  }
+
+  setDoctrineHandlers({ onToggle, onApplyPreset, onFinalizeStart, onBeginPlanning, onCancelPlanning, onResetDraft, onProposeReform, onConfirmReform }) {
+    this._onDoctrineToggle = onToggle;
+    this._onDoctrineApplyPreset = onApplyPreset;
+    this._onDoctrineFinalizeStart = onFinalizeStart;
+    this._onDoctrineBeginPlanning = onBeginPlanning;
+    this._onDoctrineCancelPlanning = onCancelPlanning;
+    this._onDoctrineResetDraft = onResetDraft;
+    this._onDoctrineProposeReform = onProposeReform;
+    this._onDoctrineConfirmReform = onConfirmReform;
+  }
+
+  _renderDoctrineEffects(doc) {
+    const fx = doc?.effects ?? doc?.mods ?? [];
+    if (!fx.length) return '—';
+    return fx.map((m) => {
+      const v = m.type === 'AddFlat' ? `${m.value >= 0 ? '+' : ''}${m.value}` : `${((m.value ?? 0) * 100 >= 0 ? '+' : '')}${((m.value ?? 0) * 100).toFixed(1)}%`;
+      return `${v} ${m.stat}`;
+    }).join('; ');
+  }
+
+  renderDoctrineScreen(state) {
     if (!this.doctrineWrap) return;
     this.doctrineWrap.innerHTML = '';
 
-    for (const [groupId, docs] of groups.entries()) {
-      const groupRow = el('div', 'group', this.doctrineWrap);
-      for (const d of docs) {
-        const pill = el('div', 'ui-pill', groupRow);
-        pill.textContent = d.name ?? d.id;
+    const groups = new Map(state.groups ?? []);
+    const categories = state.categoryOrder ?? Array.from(groups.keys());
+    if (!categories.includes(this.doctrineCategory)) this.doctrineCategory = categories[0] ?? 'economy';
 
-        const selected = selectedIds.includes(d.id);
-        if (selected) pill.classList.add('selected');
-
-        const canPick = canPickFn(d.id);
-        if (!canPick && !selected) pill.classList.add('locked');
-
-        pill.onclick = () => {
-          if (!canPick && !selected) return;
-          onPick(d.id);
-        };
+    if (this.doctrinePresetSelect) {
+      this.doctrinePresetSelect.innerHTML = '';
+      const custom = document.createElement('option');
+      custom.value = 'custom';
+      custom.textContent = 'Кастом';
+      this.doctrinePresetSelect.appendChild(custom);
+      for (const p of (state.presets ?? [])) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.nameRu ?? p.id;
+        this.doctrinePresetSelect.appendChild(opt);
       }
+      this.doctrinePresetSelect.value = state.presetId ?? 'custom';
+      this.doctrinePresetSelect.onchange = () => this._onDoctrineApplyPreset?.(this.doctrinePresetSelect.value);
+    }
+
+    const top = el('div', 'ui-status', this.doctrineWrap);
+    top.textContent = `Очки: осталось ${state.points?.remaining ?? 0} / всего ${state.points?.budget ?? 0}`;
+
+    const tabRow = el('div', 'ui-row', this.doctrineWrap);
+    for (const c of categories) {
+      const btn = el('button', `ui-btn ${c === this.doctrineCategory ? 'selected' : ''}`, tabRow);
+      btn.textContent = c;
+      btn.style.padding = '4px 8px';
+      btn.onclick = () => {
+        this.doctrineCategory = c;
+        this.renderDoctrineScreen(state);
+      };
+    }
+
+    const body = document.createElement('div');
+    body.style.display = 'grid';
+    body.style.gridTemplateColumns = '1.1fr 0.9fr';
+    body.style.gap = '8px';
+    body.style.marginTop = '6px';
+    this.doctrineWrap.appendChild(body);
+
+    const left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.flexDirection = 'column';
+    left.style.gap = '6px';
+    body.appendChild(left);
+
+    const right = document.createElement('div');
+    right.className = 'ui-status';
+    right.style.whiteSpace = 'pre-wrap';
+    right.style.border = '1px solid rgba(255,255,255,0.2)';
+    right.style.borderRadius = '8px';
+    right.style.padding = '8px';
+    body.appendChild(right);
+
+    const docs = groups.get(this.doctrineCategory) ?? [];
+    if (!this.doctrineFocusId || !docs.find((d) => d.id === this.doctrineFocusId)) this.doctrineFocusId = docs[0]?.id ?? null;
+
+    for (const d of docs) {
+      const card = el('button', 'ui-btn ui-card', left);
+      card.type = 'button';
+      const selected = (state.selectedIds ?? []).includes(d.id);
+      if (selected) card.classList.add('selected');
+      if (d.id === this.doctrineFocusId) card.style.outline = '2px solid rgba(255,255,255,0.5)';
+      const av = state.availability?.(d.id) ?? { ok: true, status: 'available' };
+      if (!av.ok && !selected) card.classList.add('locked');
+      if (av.status === 'unavailable') card.classList.add('unavailable');
+      if (av.status === 'forbidden') card.classList.add('forbidden');
+
+      el('div', 'ui-card-name', card).textContent = `${d.ui?.nameRu ?? d.id} (${d.costPoints ?? 0} очк.)`;
+      el('div', 'ui-card-meta', card).textContent = d.ui?.shortRu ?? d.balanceClass ?? '—';
+      el('div', 'ui-card-effects', card).textContent = `+/-: ${this._renderDoctrineEffects(d)}`;
+      card.onclick = () => {
+        this.doctrineFocusId = d.id;
+        this.renderDoctrineScreen(state);
+      };
+
+      const tBtn = el('button', 'ui-btn', card);
+      tBtn.type = 'button';
+      tBtn.style.marginTop = '6px';
+      tBtn.textContent = selected ? 'Убрать' : 'Выбрать';
+      tBtn.disabled = !av.ok && !selected;
+      tBtn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._onDoctrineToggle?.(d.id);
+      };
+    }
+
+    const focus = docs.find((d) => d.id === this.doctrineFocusId) ?? null;
+    if (focus) {
+      right.textContent = [
+        focus.ui?.nameRu ?? focus.id,
+        focus.ui?.descriptionRu ?? '—',
+        `Эффекты: ${this._renderDoctrineEffects(focus)}`,
+        `Конфликты: ${(focus.exclusiveGroups ?? []).join(', ') || '—'}`,
+        `Требования: ${(focus.requires ?? []).join(', ') || '—'}`,
+        `Запреты: ${(focus.forbids ?? []).join(', ') || '—'}`,
+      ].join('
+');
+    } else {
+      right.textContent = 'Нет доктрин в категории';
+    }
+
+    if (this.doctrineStatus) {
+      this.doctrineStatus.innerHTML = '';
+      const lines = [];
+      if (state.phase === 'initial') lines.push('Режим старта: настрой набор и нажми «Применить».');
+      if (state.phase === 'locked') lines.push('В партии изменение набора через режим планирования реформы.');
+      if (state.phase === 'planning') lines.push('План реформы: собери будущий набор и нажми «Предложить реформу».');
+      if (state.phase === 'reform') lines.push(`Реформа активна до хода ${state.reformProject?.endTurn ?? '—'}.`);
+      if ((state.cooldownTurnsLeft ?? 0) > 0) lines.push(`КД реформы: ${state.cooldownTurnsLeft} ходов.`);
+      if (state.reformProject?.state === 'PROPOSED') {
+        const p = state.reformProject;
+        lines.push(`Смета: ${p.durationTurns} ходов; changedPoints=${p.changedPoints}; cost gold:${p.cost?.gold ?? 0} wood:${p.cost?.wood ?? 0} metal:${p.cost?.metal ?? 0} marble:${p.cost?.marble ?? 0} glass:${p.cost?.glass ?? 0} powder:${p.cost?.powder ?? 0}`);
+        if ((p.extremeCount ?? 0) > 0) lines.push('⚠ Экстремальные доктрины: возможен дисбаланс.');
+      }
+      const msg = document.createElement('div');
+      msg.textContent = lines.join(' ');
+      this.doctrineStatus.appendChild(msg);
+
+      const actions = document.createElement('div');
+      actions.className = 'ui-row';
+      const btnApply = document.createElement('button');
+      btnApply.className = 'ui-btn';
+      btnApply.textContent = 'Применить (старт)';
+      btnApply.disabled = state.phase !== 'initial';
+      btnApply.onclick = () => this._onDoctrineFinalizeStart?.();
+      actions.appendChild(btnApply);
+
+      const btnPlan = document.createElement('button');
+      btnPlan.className = 'ui-btn';
+      btnPlan.textContent = 'План реформы';
+      btnPlan.disabled = state.phase !== 'locked' || (state.cooldownTurnsLeft ?? 0) > 0;
+      btnPlan.title = (state.cooldownTurnsLeft ?? 0) > 0 ? 'Реформа на кулдауне' : '';
+      btnPlan.onclick = () => this._onDoctrineBeginPlanning?.();
+      actions.appendChild(btnPlan);
+
+      const btnPropose = document.createElement('button');
+      btnPropose.className = 'ui-btn';
+      btnPropose.textContent = 'Предложить реформу';
+      btnPropose.disabled = state.phase !== 'planning';
+      btnPropose.onclick = () => this._onDoctrineProposeReform?.();
+      actions.appendChild(btnPropose);
+
+      const btnConfirm = document.createElement('button');
+      btnConfirm.className = 'ui-btn';
+      btnConfirm.textContent = 'Подтвердить реформу';
+      btnConfirm.disabled = !state.canConfirmReform;
+      btnConfirm.onclick = () => this._onDoctrineConfirmReform?.();
+      actions.appendChild(btnConfirm);
+
+      const btnReset = document.createElement('button');
+      btnReset.className = 'ui-btn';
+      btnReset.textContent = 'Сброс';
+      btnReset.disabled = !['initial', 'planning'].includes(state.phase);
+      btnReset.onclick = () => this._onDoctrineResetDraft?.();
+      actions.appendChild(btnReset);
+
+      const btnCancel = document.createElement('button');
+      btnCancel.className = 'ui-btn';
+      btnCancel.textContent = 'Отменить план';
+      btnCancel.disabled = state.phase !== 'planning';
+      btnCancel.onclick = () => this._onDoctrineCancelPlanning?.();
+      actions.appendChild(btnCancel);
+
+      this.doctrineStatus.appendChild(actions);
     }
   }
   setBuildInfo(def) {
