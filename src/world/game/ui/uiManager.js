@@ -28,6 +28,7 @@ export class UIManager {
     this.currentCategory = null;
     this.onPickBuilding = null;
     this.enabledById = new Map();
+    this.selectedBuildingId = null;
 
     this.presetSelect = null;
     this.recoBtn = null;
@@ -197,6 +198,17 @@ export class UIManager {
     this.buildTabRow = el('div', 'tabs', build);
 
     this.buildGrid = el("div", "grid", build);
+    this.buildGrid.addEventListener("click", (ev) => {
+      const target = ev.target;
+      if (!(target instanceof Element)) return;
+      const btn = target.closest("[data-building-id]");
+      if (!btn) return;
+      const buildingId = btn.getAttribute("data-building-id");
+      if (!buildingId) return;
+      this.setSelectedBuilding(buildingId);
+      console.log("UI select", buildingId, this.selectedBuildingId);
+      this.onPickBuilding?.(buildingId);
+    });
 
     // Building help
     const helpTitle = el('div', 'ui-mini', build);
@@ -366,10 +378,7 @@ export class UIManager {
       const btn = document.createElement('button');
       btn.className = 'ui-btn ui-card';
       btn.type = "button";
-      btn.addEventListener("click", () => {
-        this.setSelectedBuilding(t.id);
-        this.onPickBuilding?.(t.id);
-      });
+      btn.setAttribute("data-building-id", t.id);
 
       const top = el('div', 'ui-card-top', btn);
       el('div', 'ui-card-name', top).textContent = t.name ?? t.id;

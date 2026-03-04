@@ -326,6 +326,7 @@ export class OverlayManager {
   }
 
   _renderBuildAreaChunk(chunk) {
+    console.log("Overlay buildzone updated");
     const ctx = chunk.ctx;
     ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
 

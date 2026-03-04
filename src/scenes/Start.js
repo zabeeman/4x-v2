@@ -98,7 +98,7 @@ export class Start extends Phaser.Scene {
       // if route mode active, cancel it
       if (this.routeMode?.active) this._cancelRouteMode();
 
-      this.build.setSelectedBuildType(id);
+      this.build.setSelectedBuilding(id);
       this.ui.setSelectedBuilding(id);
 
       const def = this.sim.getBuildingDef(id);
@@ -115,7 +115,7 @@ export class Start extends Phaser.Scene {
     this.ui.setRecommendHandler(() => {
       const rec = this.sim.recommendNextBuilding(this.selectedPresetId);
       if (rec) {
-        this.build.setSelectedBuildType(rec);
+        this.build.setSelectedBuilding(rec);
         this.ui.setSelectedBuilding(rec);
         const def = this.sim.getBuildingDef(rec);
         this.ui.setBuildInfo(def);
@@ -149,7 +149,7 @@ export class Start extends Phaser.Scene {
       this.demolishMode = !!active;
       if (this.demolishMode) {
         this._cancelRouteMode();
-        this.build.setSelectedBuildType(null);
+        this.build.setSelectedBuilding(null);
         this.ui.setSelectedBuilding(null);
         this.ui.setBuildInfo(null);
         this.overlays.setPlacementType(null);

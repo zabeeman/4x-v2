@@ -35,6 +35,8 @@ export class GameSim {
 
       cities: [], // {id, hub:{typeId,tx,ty,level}, buildings:[], stats, influenceRadiusTiles}
       buildings: [], // flat list {id,typeId,tx,ty,cityId,level, extract?}
+      zoneSourcesByCity: new Map(), // cityId -> ZoneSource[]
+      cityBuildZoneTiles: new Map(), // cityId -> Set('tx,ty')
 
       trade: { routes: [], manualRoutes: [], goldPerMin: 0 },
 
@@ -91,6 +93,94 @@ export class GameSim {
 
   // --- District logic ---
 
+
+  _tileKey(tx, ty) {
+    return `${tx},${ty}`;
+  }
+
+  _buildZoneTilesForSource(source) {
+    const out = new Set();
+    const shape = source?.shape ?? 'TILE_DISK';
+    const radius = Math.max(0, Math.floor(source?.radius ?? 0));
+    const cx = source?.centerTx ?? source?.tx ?? 0;
+    const cy = source?.centerTy ?? source?.ty ?? 0;
+
+    if (Array.isArray(source?.tiles) && source.tiles.length > 0) {
+      for (const t of source.tiles) out.add(this._tileKey(t.tx, t.ty));
+      return out;
+    }
+
+    if (radius <= 0) return out;
+
+    for (let y = cy - radius; y <= cy + radius; y++) {
+      for (let x = cx - radius; x <= cx + radius; x++) {
+        if (shape === 'TILE_RECT') {
+          out.add(this._tileKey(x, y));
+          continue;
+        }
+        const dx = x - cx;
+        const dy = y - cy;
+        if (dx * dx + dy * dy <= radius * radius) out.add(this._tileKey(x, y));
+      }
+    }
+
+    return out;
+  }
+
+  _ensureBuildZoneSource(building, def) {
+    if (!def?.buildZone?.addsBuildZone || !building?.cityId) return;
+
+    const cityId = building.cityId;
+    const zoneSource = {
+      cityId,
+      sourceBuildingId: building.id,
+      centerTx: building.tx,
+      centerTy: building.ty,
+      tx: building.tx,
+      ty: building.ty,
+      priority: Number(def.buildZone.zonePriority ?? def.zonePriority ?? 0),
+      shape: def.buildZone.zoneShape ?? 'TILE_DISK',
+      radius: Math.max(0, Math.floor(def.buildZone.zoneRadiusTiles ?? def.buildAreaRadiusTiles ?? 0)),
+      rTiles: Math.max(0, Math.floor(def.buildZone.zoneRadiusTiles ?? def.buildAreaRadiusTiles ?? 0)),
+      tiles: [],
+      typeId: building.typeId,
+      isHub: !!(def?.isHub || def?.isStarter),
+    };
+
+    const generated = this._buildZoneTilesForSource(zoneSource);
+    zoneSource.tiles = Array.from(generated).map((k) => {
+      const [tx, ty] = k.split(',').map(Number);
+      return { tx, ty };
+    });
+
+    const list = this.state.zoneSourcesByCity.get(cityId) ?? [];
+    const existingIdx = list.findIndex((s) => s.sourceBuildingId === building.id);
+    if (existingIdx >= 0) list[existingIdx] = zoneSource;
+    else list.push(zoneSource);
+    this.state.zoneSourcesByCity.set(cityId, list);
+    console.log("ZoneSources city", cityId, list.length);
+
+    this.rebuildCityZones(cityId);
+  }
+
+  rebuildCityZones(cityId) {
+    const list = this.state.zoneSourcesByCity.get(cityId) ?? [];
+    const union = new Set();
+    for (const src of list) {
+      const tiles = (Array.isArray(src.tiles) && src.tiles.length > 0)
+        ? src.tiles.map((t) => this._tileKey(t.tx, t.ty))
+        : Array.from(this._buildZoneTilesForSource(src));
+      for (const key of tiles) union.add(key);
+    }
+    this.state.cityBuildZoneTiles.set(cityId, union);
+    console.log("CityZoneTiles size", cityId, union.size);
+    return union;
+  }
+
+  _rebuildAllCityZones() {
+    for (const city of this.state.cities) this.rebuildCityZones(city.id);
+  }
+
   _nearestHubs(tx, ty) {
     const hubs = this.state.cities.map(c => c.hub).filter(Boolean);
     if (hubs.length === 0) return { first: null, second: null };
@@ -122,13 +212,23 @@ export class GameSim {
   }
 
   _zoneSourcesCoveringTile(tx, ty) {
-    return this.getBuildAreaSources().filter((s) => {
-      const r = s.rTiles ?? 0;
-      if (r <= 0) return false;
-      const dx = tx - s.tx;
-      const dy = ty - s.ty;
-      return dx * dx + dy * dy <= r * r;
-    });
+    const key = this._tileKey(tx, ty);
+    const out = [];
+    for (const list of this.state.zoneSourcesByCity.values()) {
+      for (const s of list) {
+        if (Array.isArray(s.tiles) && s.tiles.length > 0) {
+          const has = s.tiles.some((t) => t.tx === tx && t.ty === ty);
+          if (has) out.push(s);
+          continue;
+        }
+        const r = s.rTiles ?? s.radius ?? 0;
+        if (r <= 0) continue;
+        const dx = tx - (s.centerTx ?? s.tx);
+        const dy = ty - (s.centerTy ?? s.ty);
+        if (dx * dx + dy * dy <= r * r) out.push(s);
+      }
+    }
+    return out.filter((s) => (this.state.cityBuildZoneTiles.get(s.cityId)?.has(key) ?? true));
   }
 
   _ownerFromCovered(tx, ty, coveredSources = null) {
@@ -207,7 +307,7 @@ export class GameSim {
       return Math.max(0, dist(sp.tx, sp.ty, tx, ty) - r);
     }
 
-    const sources = this.getBuildAreaSources();
+    const sources = this.getZoneSources();
     if (sources.length === 0) return Infinity;
 
     let best = Infinity;
@@ -253,7 +353,7 @@ export class GameSim {
   }
 
   getOwnerMeta(tx, ty) {
-    const sources = this.getBuildAreaSources();
+    const sources = this.getZoneSources();
     const meta = resolveBuildZoneOwnerMeta(tx, ty, sources);
     if (!meta) return null;
     return { cityId: meta.cityId, dist: meta.dist, priority: meta.priority };
@@ -376,6 +476,8 @@ export class GameSim {
     const city = this.getCityById(cityId);
     if (city) city.buildings.push(b);
 
+    this._ensureBuildZoneSource(b, def);
+
     this.recomputeDerived();
     this._bump();
 
@@ -426,12 +528,22 @@ export class GameSim {
       city.buildings = city.buildings.filter(x => x.id !== b.id);
     }
 
+    // Keep zone sources in sync
+    if (b.cityId) {
+      const list = this.state.zoneSourcesByCity.get(b.cityId) ?? [];
+      const next = list.filter((src) => src.sourceBuildingId !== b.id);
+      this.state.zoneSourcesByCity.set(b.cityId, next);
+      this.rebuildCityZones(b.cityId);
+    }
+
     // If it was a hub -> remove city and linked manual routes
     let removedCityId = null;
     if (def?.isHub || def?.isStarter) {
       removedCityId = city?.id ?? null;
       if (removedCityId) {
         this.state.cities = this.state.cities.filter(c => c.id !== removedCityId);
+        this.state.zoneSourcesByCity.delete(removedCityId);
+        this.state.cityBuildZoneTiles.delete(removedCityId);
         // remove any manual routes touching this city
         this.state.trade.manualRoutes = this.state.trade.manualRoutes.filter(r => r.aCityId !== removedCityId && r.bCityId !== removedCityId);
       }
@@ -593,21 +705,14 @@ export class GameSim {
     return this._cityEnclosingBuildRadiusTiles(c);
   }
 
-  // Build area sources for visualization (union-of-circles)
+  // Build area sources for visualization (union of ZoneSources).
   getBuildAreaSources() {
+    return this.getZoneSources();
+  }
+
+  getZoneSources() {
     const out = [];
-    for (const b of this.state.buildings) {
-      const def = this.getBuildingDef(b.typeId);
-      out.push({
-        cityId: b.cityId,
-        tx: b.tx,
-        ty: b.ty,
-        rTiles: this._buildAreaRadiusTilesForDef(def),
-        typeId: b.typeId,
-        priority: typeof def?.zonePriority === 'number' ? def.zonePriority : (def?.isHub || def?.isStarter ? 100 : 0),
-        isHub: !!(def?.isHub || def?.isStarter),
-      });
-    }
+    for (const list of this.state.zoneSourcesByCity.values()) out.push(...list);
     return out;
   }
 
