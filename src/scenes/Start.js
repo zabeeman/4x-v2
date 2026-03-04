@@ -10,6 +10,12 @@ import { BuildManager } from "../world/game/buildManager.js";
 import { UIManager } from "../world/game/uiManager.js";
 import { findSpawn, loadSpawnRegistry, addSpawnToRegistry, clearSpawnRegistry } from "../world/game/spawnManager.js";
 
+import { createDefaultGameData } from "../world/game/sim/defaultGameData.js";
+import { GameSim } from "../world/game/sim/gameSim.js";
+
+import { OverlayManager } from "../world/game/overlay/overlayManager.js";
+import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
+
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
   const s = qs.get("seed");
@@ -60,10 +66,14 @@ export class Start extends Phaser.Scene {
     // Terrain
     this.chunkMgr = createChunkManager(this, this.cfg, terrainPalette);
 
-    // Gameplay config (table)
+    // Gameplay config
     this.gcfg = gameConfig;
 
-    // Safe distance (can override via URL ?mindist=1000)
+    // Sim data + sim
+    this.gameData = createDefaultGameData(this.gcfg);
+    this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
+
+    // Safe distance
     this.safeDist = parseIntQ("mindist", this.gcfg.spawn.safeDistanceTilesDefault);
     this.safeDist = Phaser.Math.Clamp(this.safeDist, this.gcfg.spawn.safeDistanceTilesMin, this.gcfg.spawn.safeDistanceTilesMax);
 
@@ -72,33 +82,113 @@ export class Start extends Phaser.Scene {
 
     // Units + build
     this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
-    this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog);
+    this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog, this.sim);
+
+    // Overlays & route renderer
+    this.overlays = new OverlayManager(this, this.cfg, this.sim);
+    this.routeRenderer = new RouteRenderer(this, this.cfg);
 
     // UI
     this.ui = new UIManager(this, this.cfg, this.gcfg);
     this.ui.create();
 
     // Build palette
-    const catalogue = this.gcfg.buildings;
+    const catalogue = this.sim.getCatalogue();
     this.ui.buildButtonsFromCatalogue(catalogue, (id) => {
-      // Gate: until starter placed, only starter button works
-      const t = catalogue.find(x => x.id === id);
-      if (!t) return;
-      if (!this.build.starterPlaced && !t.isStarter) return;
+      // if route mode active, cancel it
+      if (this.routeMode?.active) this._cancelRouteMode();
 
       this.build.setSelectedBuildType(id);
       this.ui.highlightSelectedBuilding(id);
+
+      const def = this.sim.getBuildingDef(id);
+      this.ui.setBuildingInfo(def);
+
+      const wantPlacement = !!def?.placeRules?.showPlacementHint;
+      this.overlays.setPlacementType(wantPlacement ? id : null);
     });
+
+    // Presets
+    this.selectedPresetId = this.gameData.presets[0]?.id ?? 'Balanced';
+    this.ui.setPresetOptions(this.gameData.presets, (pid) => {
+      this.selectedPresetId = pid;
+    });
+
+    this.ui.setRecommendHandler(() => {
+      const rec = this.sim.recommendNextBuilding(this.selectedPresetId);
+      if (rec) {
+        this.build.setSelectedBuildType(rec);
+        this.ui.highlightSelectedBuilding(rec);
+        const def = this.sim.getBuildingDef(rec);
+        this.ui.setBuildingInfo(def);
+        const wantPlacement = !!def?.placeRules?.showPlacementHint;
+        this.overlays.setPlacementType(wantPlacement ? rec : null);
+      }
+    });
+
+    // Doctrines
+    const groups = this.sim.getDoctrineGroups();
+    const renderDoctrines = () => {
+      this.ui.renderDoctrines(
+        groups,
+        this.sim.state.selectedDoctrines,
+        (id) => this.sim.canSelectDoctrine(id),
+        (id) => {
+          this.sim.selectDoctrine(id);
+          renderDoctrines();
+        }
+      );
+    };
+    renderDoctrines();
+
+    // Overlay toggles
+    this.ui.setOverlayToggleHandler((toggles) => {
+      this.overlays.setToggles(toggles);
+    });
+
+    // Demolish + cheats
+    this.demolishMode = false;
+    this.ui.setDemolishToggleHandler((active) => {
+      this.demolishMode = !!active;
+      if (this.demolishMode) {
+        this._cancelRouteMode();
+        this.build.setSelectedBuildType(null);
+        this.ui.highlightSelectedBuilding(null);
+        this.ui.setBuildingInfo(null);
+        this.overlays.setPlacementType(null);
+      }
+    });
+
+    this.ui.setInfiniteResourcesHandler((flag) => {
+      this.sim.setInfiniteResources(flag);
+    });
+
+    // Manual trade routes
+    this.routeMode = { active: false, mode: 'land', srcCityId: null, hoverCityId: null };
+    this.ui.setTradeRouteHandlers({
+      onLand: () => this._startRouteMode('land'),
+      onWater: () => this._startRouteMode('water'),
+      onCancel: () => this._cancelRouteMode(),
+    });
+
+    this._lastRouteListRev = -1;
 
     // Spawn + initial state
     this._spawnAndInit();
 
-    // Pointer interactions:
-    // - LMB on unit selects (handled by sprite interactive)
-    // - LMB on world: if build mode -> try place building, else if unit selected -> set path
+    // Pointer interactions
     this.input.on("pointermove", (pointer) => {
       if (this.ui.isPointerOverUI(pointer)) return;
       const p = pointer.positionToCamera(this.cameras.main);
+      const tx = Math.floor(p.x / this.cfg.tileSize);
+      const ty = Math.floor(p.y / this.cfg.tileSize);
+
+      if (this.routeMode.active) {
+        const c = this.sim.findCityHubAt(tx, ty, 2);
+        this.routeMode.hoverCityId = c?.id ?? null;
+        return;
+      }
+
       this.build.updateGhost(this.cfg.worldSeed, p.x, p.y);
     });
 
@@ -110,140 +200,225 @@ export class Start extends Phaser.Scene {
       const tx = Math.floor(p.x / this.cfg.tileSize);
       const ty = Math.floor(p.y / this.cfg.tileSize);
 
-      // If we have a selected build type -> place (Дом-1 first)
-      if (this.build.getSelectedBuildType()) {
-        const b = this.build.tryPlaceSelected(this.cfg.worldSeed);
-        if (b) {
-          // If Дом-1 got placed => "finalize" spawn reservation in registry
-          const type = this.gcfg.buildings.find(t => t.id === b.typeId);
-          if (type?.isStarter) addSpawnToRegistry(this.spawn);
+      // Route mode has priority
+      if (this.routeMode.active) {
+        const c = this.sim.findCityHubAt(tx, ty, 2);
+        if (!c) return;
 
-          // After placing starter building, we can enable other buildings
-          if (this.build.starterPlaced) this._enableNonStarterBuildings();
+        if (!this.routeMode.srcCityId) {
+          this.routeMode.srcCityId = c.id;
+          this.ui.setTradeStatus(`Источник выбран. Теперь выбери цель (${this.routeMode.mode === 'water' ? 'по воде' : 'по земле'}).`);
+        } else {
+          if (c.id === this.routeMode.srcCityId) return;
+          const res = this.sim.createManualTradeRoute(this.routeMode.srcCityId, c.id, this.routeMode.mode);
+          if (res.ok) {
+            this.ui.setTradeStatus(`Маршрут создан (${this.routeMode.mode}).`);
+          } else {
+            const msg = res.reason === 'no_port' ? 'Нет порта рядом с одним из хабов.' : `Не удалось: ${res.reason}`;
+            this.ui.setTradeStatus(msg);
+          }
+          this._cancelRouteMode(false);
         }
         return;
       }
-      // Movement is disabled for now.
+
+      // Demolish mode has priority over build placement
+      if (this.demolishMode) {
+        const res = this.build.tryDemolishAtTile(tx, ty);
+        if (res.ok) {
+          this.ui.setTradeStatus('');
+          this._rebuildButtonsGate();
+        }
+        return;
+      }
+
+      // Build placement
+      if (this.build.getSelectedBuildType()) {
+        const b = this.build.tryPlaceSelected(this.cfg.worldSeed);
+        if (b) {
+          const def = this.sim.getBuildingDef(b.typeId);
+          if (def?.isStarter) addSpawnToRegistry(this.spawn);
+          this._rebuildButtonsGate();
+        }
+        return;
+      }
     });
 
     // Hotkeys
     this.input.keyboard.on("keydown-R", () => {
-      // reroll spawn only before starter building is placed
-      if (this.build.starterPlaced) return;
+      if (this.sim.state.cities.length > 0) return;
       this._spawnAndInit(true);
     });
 
     this.input.keyboard.on("keydown-OPEN_BRACKET", () => {
-      if (this.build.starterPlaced) return;
+      if (this.sim.state.cities.length > 0) return;
       this.safeDist = Math.max(this.gcfg.spawn.safeDistanceTilesMin, this.safeDist - this.gcfg.spawn.safeDistanceStep);
       this._spawnAndInit(true);
     });
 
     this.input.keyboard.on("keydown-CLOSE_BRACKET", () => {
-      if (this.build.starterPlaced) return;
+      if (this.sim.state.cities.length > 0) return;
       this.safeDist = Math.min(this.gcfg.spawn.safeDistanceTilesMax, this.safeDist + this.gcfg.spawn.safeDistanceStep);
       this._spawnAndInit(true);
     });
 
+    this.input.keyboard.on("keydown-ESC", () => {
+      if (this.routeMode.active) {
+        this._cancelRouteMode();
+        return;
+      }
 
-this.input.keyboard.on("keydown-ESC", () => {
-  // cancel build mode (keeps selection on unit)
-  this.build.setSelectedBuildType(null);
-  this.ui.highlightSelectedBuilding(null);
-});
+      if (this.demolishMode) {
+        // turn off demolish
+        this.demolishMode = false;
+        // UI button state will remain (that's ok), user can toggle again
+        return;
+      }
+      this.build.setSelectedBuildType(null);
+      this.ui.highlightSelectedBuilding(null);
+    });
+
     this.input.keyboard.on("keydown-C", (ev) => {
       if (ev.shiftKey) {
         clearSpawnRegistry();
-        if (!this.build.starterPlaced) this._spawnAndInit(true);
+        if (this.sim.state.cities.length === 0) this._spawnAndInit(true);
       }
     });
   }
 
+  _startRouteMode(mode) {
+    this.routeMode.active = true;
+    this.routeMode.mode = mode;
+    this.routeMode.srcCityId = null;
+    this.routeMode.hoverCityId = null;
+
+    // cancel build mode
+    this.build.setSelectedBuildType(null);
+    this.ui.highlightSelectedBuilding(null);
+
+    this.ui.setTradeStatus(`Режим маршрута: выбери источник (${mode === 'water' ? 'по воде' : 'по земле'}). Клик по хабам.`);
+  }
+
+  _cancelRouteMode(clearStatus = true) {
+    this.routeMode.active = false;
+    this.routeMode.srcCityId = null;
+    this.routeMode.hoverCityId = null;
+    if (clearStatus) this.ui.setTradeStatus('');
+  }
+
   _spawnAndInit(reroll = false) {
-    // Clear previous state
     if (reroll) {
-      // keep UI etc, just re-init spawn/unit/build/fog
       this.units.destroy();
       this.build.destroy();
       this.fog.reset();
 
-      this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog);
+      // reset sim
+      this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
+
+      // rewire overlays sim ref
+      this.overlays.sim = this.sim;
+
+      this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog, this.sim);
       this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
-      // ensure ghost follows selection
+
       this.build.setSelectedBuildType(null);
       this.ui.highlightSelectedBuilding(null);
-      this._rebuildButtonsGate();
+
+      this._cancelRouteMode();
     }
 
     const other = loadSpawnRegistry();
     const spawn = findSpawn(this.cfg.worldSeed, this.cfg, this.gcfg, other, this.safeDist);
     this.spawn = spawn;
 
-    // focus camera near spawn
     const wx = (spawn.x + 0.5) * this.cfg.tileSize;
     const wy = (spawn.y + 0.5) * this.cfg.tileSize;
     this.cameras.main.centerOn(wx, wy);
-
-    // Start closer to spawn
     this.cameras.main.setZoom(this.gcfg.camera.initialZoom);
 
-    // Register spawn only when we place the starter building (so rerolls don't pollute).
-    // For now, we will register immediately to keep distance stable across tabs:
-    // Initialize build & fog
     this.build.setSpawnTile(spawn);
+    this.sim.setSpawn(spawn.x, spawn.y);
 
-    // No fog around start (100 tiles)
     this.fog.revealCircle(spawn.x, spawn.y, this.gcfg.fog.startRevealRadiusTiles);
 
-    // Place starting unit and select it
     const u = this.units.addUnitAtTile(spawn.x, spawn.y, { name: "Разведчик" });
     this.units.selectUnit(u.id);
 
-    // Starter building selection by default
-    const starter = this.gcfg.buildings.find(b => b.isStarter);
+    const starter = this.sim.getCatalogue().find(b => b.isStarter);
     if (starter) {
       this.build.setSelectedBuildType(starter.id);
       this.ui.highlightSelectedBuilding(starter.id);
     }
 
-    // Gate buttons depending on starter state
     this._rebuildButtonsGate();
   }
 
   _rebuildButtonsGate() {
-    const cat = this.gcfg.buildings;
+    const cat = this.sim.getCatalogue();
+    const hasStarter = this.sim.state.cities.length > 0;
+
     for (const t of cat) {
-      const enabled = this.build.starterPlaced ? true : !!t.isStarter;
+      const enabled = hasStarter ? true : !!t.isStarter;
       this.ui.setBuildingEnabled(t.id, enabled);
     }
-  }
-
-  _enableNonStarterBuildings() {
-    this._rebuildButtonsGate();
-    // Optionally auto-deselect build tool after placing starter:
-    this.build.setSelectedBuildType(null);
-    this.ui.highlightSelectedBuilding(null);
   }
 
   update(_t, dt) {
     this.cameraCtl.update();
     this.chunkMgr.update();
-
-    // fog redraw throttled
     this.fog.update();
 
-    // Update UI
+    // sim
+    this.sim.update(dt);
+
+    // overlays + routes
+    this.overlays.update();
+
+    this.routeRenderer.render(
+      this.sim.state.trade.routes,
+      this.sim.getCities(),
+      {
+        src: this.routeMode.srcCityId,
+        hover: this.routeMode.hoverCityId,
+      }
+    );
+
+    // route list (manual routes) update only when sim changes
+    const rev = this.sim.getRevision();
+    if (rev !== this._lastRouteListRev) {
+      this._lastRouteListRev = rev;
+      this.ui.renderRoutes(this.sim.state.trade.routes, this.sim.getCities(), (routeId) => {
+        this.sim.removeManualTradeRoute(routeId);
+      });
+    }
+
+    // UI
     const sel = this.units.getSelectedUnit();
     const buildType = this.build.getSelectedBuildType();
-    const buildStatus = this.build.starterPlaced ? "Дом-1: построен" : "Дом-1: НЕ построен";
+
+    const res = this.sim.getResources();
+    const per = this.sim.state.perMin;
+
+    const cities = this.sim.getCities();
+    const routes = this.sim.state.trade.routes.length;
+
+    const mode = this.routeMode.active
+      ? `маршрут: ${this.routeMode.mode}${this.routeMode.srcCityId ? ' (источник выбран)' : ''}`
+      : (this.demolishMode ? 'СНОС' : (buildType ? `строю: ${buildType.name}` : 'выбор'));
 
     this.ui.setPlayerText([
       `seed=${this.cfg.worldSeed}`,
       `spawn=${this.spawn.x},${this.spawn.y}`,
-      `safeDist=${this.safeDist}`,
+      `cities=${cities.length}  routes=${routes}`,
       `selected=${sel ? `${sel.name} @ ${sel.tx},${sel.ty}` : "—"}`,
-      `mode=${buildType ? `строю: ${buildType.name}` : "выбор"}`,
-      `${buildStatus}`,
+      `mode=${mode}`,
+      `gold=${res.gold.toFixed(1)}  (+${per.gold.toFixed(2)}/min)`,
+      `wood=${res.wood.toFixed(1)} (+${per.wood.toFixed(2)}/min)  metal=${res.metal.toFixed(1)} (+${per.metal.toFixed(2)}/min)`,
+      `marble=${res.marble.toFixed(1)} (+${per.marble.toFixed(2)}/min)  glass=${res.glass.toFixed(1)} (+${per.glass.toFixed(2)}/min)`,
+      `powder=${res.powder.toFixed(1)} (+${per.powder.toFixed(2)}/min)  research=${(res.research ?? 0).toFixed(1)} (+${per.research.toFixed(2)}/min)`,
+      `trade_income=${this.sim.state.trade.goldPerMin.toFixed(2)}/min`,
+      `cheats=${this.sim.isInfiniteResources() ? '∞' : '—'}`,
+      `doctrines=${this.sim.state.selectedDoctrines.join(', ') || '—'}`,
       `chunks=${this.chunkMgr.getLoadedCount?.() ?? "?"}`,
     ]);
   }

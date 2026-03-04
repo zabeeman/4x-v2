@@ -1,25 +1,20 @@
 // src/world/game/buildManager.js
 import { sampleHM } from "../infinite/terrainSampler.js";
 
-function dist2(ax, ay, bx, by) {
-  const dx = ax - bx, dy = ay - by;
-  return dx * dx + dy * dy;
-}
-
 export class BuildManager {
-  constructor(scene, infiniteCfg, gameCfg, fog) {
+  constructor(scene, infiniteCfg, gameCfg, fog, sim) {
     this.scene = scene;
     this.infiniteCfg = infiniteCfg;
     this.gameCfg = gameCfg;
     this.fog = fog;
+    this.sim = sim;
 
     this.tileSize = infiniteCfg.tileSize;
 
-    this.buildings = []; // { id,type, tx,ty, sprite }
+    this.buildings = []; // visuals: { id,typeId, tx,ty, sprite }
     this.selectedBuildTypeId = null;
 
     this.spawn = null; // {x,y}
-    this.starterPlaced = false;
 
     // Ghost
     this.ghost = this.scene.add.rectangle(0, 0, this.tileSize, this.tileSize, 0xffffff, 0.25)
@@ -28,7 +23,9 @@ export class BuildManager {
       .setVisible(false);
 
     this._valid = false;
+    this._afford = false;
     this._lastGhostTile = null;
+    this._lastReason = null;
   }
 
   setSpawnTile(p) {
@@ -36,7 +33,7 @@ export class BuildManager {
   }
 
   getCatalogue() {
-    return this.gameCfg.buildings;
+    return this.sim ? this.sim.getCatalogue() : this.gameCfg.buildings;
   }
 
   setSelectedBuildType(id) {
@@ -48,40 +45,20 @@ export class BuildManager {
     return this.getCatalogue().find(b => b.id === this.selectedBuildTypeId) ?? null;
   }
 
-  // Buildable area:
-  // - before starter building: radius around spawn (firstBuildRadiusTiles)
-  // - after: union of circles around buildings with radius >= minBuildAreaRadiusTiles or per-type buildAreaRadiusTiles
-  isInBuildArea(tx, ty) {
-    const cfgB = this.gameCfg.building;
-
-    if (!this.starterPlaced) {
-      if (!this.spawn) return false;
-      const r = cfgB.firstBuildRadiusTiles;
-      return dist2(tx, ty, this.spawn.x, this.spawn.y) <= r * r;
-    }
-
-    const minR = cfgB.minBuildAreaRadiusTiles;
-    for (const b of this.buildings) {
-      const type = this.getCatalogue().find(t => t.id === b.typeId);
-      const r = Math.max(minR, type?.buildAreaRadiusTiles ?? minR);
-      if (dist2(tx, ty, b.tx, b.ty) <= r * r) return true;
-    }
-    return false;
-  }
-
   isValidBuildTile(seed, tx, ty) {
-    const cfgB = this.gameCfg.building;
-    if (!this.isInBuildArea(tx, ty)) return false;
-
-    const s = sampleHM(seed, tx, ty, this.infiniteCfg);
-    if (cfgB.disallowSurfaces.has(s.surface)) return false;
-    if ((s.slope ?? 0) > cfgB.maxSlope) return false;
-
-    // occupied?
-    for (const b of this.buildings) {
-      if (b.tx === tx && b.ty === ty) return false;
+    // Sim does district rules + extractor rules + starter gate.
+    if (this.sim) {
+      const chk = this.sim.canPlaceBuilding(this.selectedBuildTypeId, tx, ty);
+      return chk;
     }
-    return true;
+
+    // legacy fallback
+    const cfgB = this.gameCfg.building;
+    const s = sampleHM(seed, tx, ty, this.infiniteCfg);
+    if (cfgB.disallowSurfaces.has(s.surface)) return { ok: false, reason: 'bad_surface' };
+    if ((s.slope ?? 0) > cfgB.maxSlope) return { ok: false, reason: 'too_steep' };
+    for (const b of this.buildings) if (b.tx === tx && b.ty === ty) return { ok: false, reason: 'occupied' };
+    return { ok: true, cityId: null };
   }
 
   updateGhost(seed, worldX, worldY) {
@@ -91,55 +68,96 @@ export class BuildManager {
     const type = this.getSelectedBuildType();
     if (!type) { this.ghost.setVisible(false); return; }
 
-    const w = (tx + 0.5) * this.tileSize;
-    const h = (ty + 0.5) * this.tileSize;
-    this.ghost.setPosition(w, h).setVisible(true);
+    const x = (tx + 0.5) * this.tileSize;
+    const y = (ty + 0.5) * this.tileSize;
+    this.ghost.setPosition(x, y).setVisible(true);
 
-    const valid = this.isValidBuildTile(seed, tx, ty) && this._isAllowedByStarterRule(type);
-    this._valid = valid;
+    const chk = this.isValidBuildTile(seed, tx, ty);
+    const afford = this.sim ? this.sim.canAfford(type.id) : true;
+
+    this._valid = !!chk.ok;
+    this._afford = !!afford;
     this._lastGhostTile = { tx, ty };
+    this._lastReason = chk.reason ?? null;
 
-    this.ghost.setFillStyle(valid ? 0x06d6a0 : 0xef476f, 0.22);
-    this.ghost.setStrokeStyle(2, valid ? 0x06d6a0 : 0xef476f, 0.55);
-  }
-
-  _isAllowedByStarterRule(type) {
-    if (!this.starterPlaced) return !!type.isStarter; // only Дом-1 until built
-    return true;
+    // Colors:
+    // - green = ok + afford
+    // - orange = ok but no resources
+    // - red = invalid
+    if (!this._valid) {
+      this.ghost.setFillStyle(0xef476f, 0.22);
+      this.ghost.setStrokeStyle(2, 0xef476f, 0.55);
+    } else if (!this._afford) {
+      this.ghost.setFillStyle(0xf4a261, 0.22);
+      this.ghost.setStrokeStyle(2, 0xf4a261, 0.55);
+    } else {
+      this.ghost.setFillStyle(0x06d6a0, 0.22);
+      this.ghost.setStrokeStyle(2, 0x06d6a0, 0.55);
+    }
   }
 
   tryPlaceSelected(seed) {
     const type = this.getSelectedBuildType();
     if (!type || !this._lastGhostTile) return null;
-    if (!this._isAllowedByStarterRule(type)) return null;
 
     const { tx, ty } = this._lastGhostTile;
-    if (!this.isValidBuildTile(seed, tx, ty)) return null;
 
-    // place sprite (simple rectangle for now)
+    const chk = this.isValidBuildTile(seed, tx, ty);
+    if (!chk.ok) return null;
+
+    if (this.sim && !this.sim.canAfford(type.id)) return null;
+
+    // Place in sim first
+    let placed = null;
+    if (this.sim) {
+      const res = this.sim.placeBuilding(type.id, tx, ty);
+      if (!res.ok) return null;
+      placed = res.building;
+    }
+
+    // Visual
     const x = (tx + 0.5) * this.tileSize;
     const y = (ty + 0.5) * this.tileSize;
 
-    const color = type.isStarter ? 0x118ab2 : 0x073b4c;
+    // Color by district/city id (deterministic hash) for quick visibility
+    let color = 0x073b4c;
+    if (type.isStarter) color = 0x118ab2;
+    else if (type.isHub) color = 0x8d99ae;
+    else if (type.extract) color = 0x2a9d8f;
+
     const spr = this.scene.add.rectangle(x, y, this.tileSize * 0.92, this.tileSize * 0.92, color, 1)
       .setStrokeStyle(2, 0xffffff, 0.35)
       .setDepth(1100);
 
-    const b = {
-      id: `${type.id}_${Date.now()}`,
+    const bVis = {
+      id: placed?.id ?? `${type.id}_${Date.now()}`,
       typeId: type.id,
       tx, ty,
       sprite: spr,
     };
-    this.buildings.push(b);
+    this.buildings.push(bVis);
 
-    if (type.isStarter) this.starterPlaced = true;
-
-    // reveal fog around building (permanent)
+    // reveal fog around building
     const rr = type.fogRevealRadiusTiles ?? this.gameCfg.fog.buildingRevealRadiusTiles;
     if (this.fog) this.fog.revealCircle(tx, ty, rr);
 
-    return b;
+    return bVis;
+  }
+
+  tryDemolishAtTile(tx, ty) {
+    if (!this.sim) return { ok: false, reason: 'no_sim' };
+
+    const res = this.sim.removeBuildingAt(tx, ty);
+    if (!res.ok) return res;
+
+    // remove visual
+    const idx = this.buildings.findIndex(b => b.tx === tx && b.ty === ty);
+    if (idx >= 0) {
+      this.buildings[idx].sprite.destroy();
+      this.buildings.splice(idx, 1);
+    }
+
+    return res;
   }
 
   destroy() {
