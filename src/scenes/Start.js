@@ -67,6 +67,10 @@ export class Start extends Phaser.Scene {
     super("Start");
   }
 
+  preload() {
+    this.load.json('doctrine_catalog', 'doctrines_catalog.json');
+  }
+
   create() {
     // World config
     this.cfg = { ...defaultInfiniteConfig };
@@ -92,7 +96,8 @@ export class Start extends Phaser.Scene {
     this.gcfg = gameConfig;
 
     // Sim data + sim
-    this.gameData = createDefaultGameData(this.gcfg);
+    const doctrineCatalog = this.cache.json.get('doctrine_catalog') ?? null;
+    this.gameData = createDefaultGameData(this.gcfg, doctrineCatalog);
     this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
     this._lastDoctrineSaveRev = -1;
 
@@ -427,6 +432,8 @@ export class Start extends Phaser.Scene {
   }
 
   update(_t, dt) {
+    if (!this.sim) return;
+
     this.cameraCtl.update();
     this.chunkMgr.update();
     this.fog.update();
