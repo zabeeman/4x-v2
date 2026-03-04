@@ -262,8 +262,26 @@ export function createDefaultGameData(gameCfg) {
   const doctrines = [
     {
       id: 'free_market',
-      name: 'Свободный рынок',
-      choiceGroup: 'economy',
+      category: 'economy',
+      costPoints: 3,
+      balanceClass: 'BALANCED',
+      exclusiveGroups: ['eco_model'],
+      requires: [],
+      forbids: [],
+      recommendedBuildings: ['market_1', 'port_1'],
+      recommendedBuildingTags: ['trade'],
+      effects: [
+        { stat: StatId.GoldPerMinPct, type: 'AddPct', value: 0.10 },
+        { stat: StatId.CostCoeffPct, type: 'AddPct', value: 0.03 },
+        { stat: StatId.DiplomacyPct, type: 'AddPct', value: 0.04 },
+      ],
+      ui: {
+        nameRu: 'Свободный рынок',
+        shortRu: 'Торговля и оборот',
+        descriptionRu: 'Ставка на торговые связи и гибкий рынок.',
+        tagsRu: ['экономика', 'торговля'],
+        icon: '💱',
+      },
       mods: [
         { stat: StatId.GoldPerMinPct, type: 'AddPct', value: 0.10 },
         { stat: StatId.CostCoeffPct, type: 'AddPct', value: 0.03 },
@@ -272,8 +290,26 @@ export function createDefaultGameData(gameCfg) {
     },
     {
       id: 'planned_economy',
-      name: 'Плановая экономика',
-      choiceGroup: 'economy',
+      category: 'economy',
+      costPoints: 3,
+      balanceClass: 'BALANCED',
+      exclusiveGroups: ['eco_model'],
+      requires: [],
+      forbids: [],
+      recommendedBuildings: ['sawmill', 'mine', 'quarry'],
+      recommendedBuildingTags: ['industry'],
+      effects: [
+        { stat: StatId.CostCoeffPct, type: 'AddPct', value: -0.06 },
+        { stat: StatId.ResourceYieldPct, type: 'AddPct', value: 0.07 },
+        { stat: StatId.HappinessPct, type: 'AddPct', value: 0.03 },
+      ],
+      ui: {
+        nameRu: 'Плановая экономика',
+        shortRu: 'Меньше хаоса, больше планов',
+        descriptionRu: 'Снижение затрат ценой меньшей гибкости рынка.',
+        tagsRu: ['экономика', 'производство'],
+        icon: '📊',
+      },
       mods: [
         { stat: StatId.CostCoeffPct, type: 'AddPct', value: -0.06 },
         { stat: StatId.ResourceYieldPct, type: 'AddPct', value: 0.07 },
@@ -282,8 +318,26 @@ export function createDefaultGameData(gameCfg) {
     },
     {
       id: 'globalism',
-      name: 'Глобализм',
-      choiceGroup: 'diplomacy',
+      category: 'diplomacy',
+      costPoints: 2,
+      balanceClass: 'BALANCED',
+      exclusiveGroups: ['foreign_policy'],
+      requires: [],
+      forbids: [],
+      recommendedBuildings: ['port_1', 'shipyard_1'],
+      recommendedBuildingTags: ['navy', 'trade'],
+      effects: [
+        { stat: StatId.TradeRadiusPct, type: 'AddPct', value: 0.12 },
+        { stat: StatId.TradeShipSpeedPct, type: 'AddPct', value: 0.08 },
+        { stat: StatId.DiplomacyPct, type: 'AddPct', value: 0.06 },
+      ],
+      ui: {
+        nameRu: 'Глобализм',
+        shortRu: 'Связи с внешним миром',
+        descriptionRu: 'Ставка на торговые маршруты и морские перевозки.',
+        tagsRu: ['дипломатия', 'флот'],
+        icon: '🌍',
+      },
       mods: [
         { stat: StatId.TradeRadiusPct, type: 'AddPct', value: 0.12 },
         { stat: StatId.TradeShipSpeedPct, type: 'AddPct', value: 0.08 },
@@ -292,8 +346,26 @@ export function createDefaultGameData(gameCfg) {
     },
     {
       id: 'isolationism',
-      name: 'Изоляционизм',
-      choiceGroup: 'diplomacy',
+      category: 'diplomacy',
+      costPoints: 2,
+      balanceClass: 'SWINGY',
+      exclusiveGroups: ['foreign_policy'],
+      requires: [],
+      forbids: [],
+      recommendedBuildings: ['watchtower_1', 'wall_1'],
+      recommendedBuildingTags: ['defense'],
+      effects: [
+        { stat: StatId.HappinessPct, type: 'AddPct', value: 0.06 },
+        { stat: StatId.TradeRadiusPct, type: 'AddPct', value: -0.08 },
+        { stat: StatId.Stability, type: 'AddFlat', value: 2 },
+      ],
+      ui: {
+        nameRu: 'Изоляционизм',
+        shortRu: 'Ставка на внутренний порядок',
+        descriptionRu: 'Меньше внешних связей, больше внутренней устойчивости.',
+        tagsRu: ['дипломатия', 'оборона'],
+        icon: '🛡️',
+      },
       mods: [
         { stat: StatId.HappinessPct, type: 'AddPct', value: 0.06 },
         { stat: StatId.TradeRadiusPct, type: 'AddPct', value: -0.08 },
@@ -302,53 +374,24 @@ export function createDefaultGameData(gameCfg) {
     },
   ];
 
-  const presets = [
+  const doctrinePresets = [
     {
-      id: 'Balanced',
-      name: 'Баланс',
-      costPenalty: 0.0015,
-      weights: {
-        [StatId.GoldPerMinPct]: 1.0,
-        [StatId.ResearchPerMinPct]: 0.7,
-        [StatId.ResourceYieldPct]: 0.7,
-        [StatId.TradeRadiusPct]: 0.5,
-        [StatId.TradeSlots]: 0.6,
-        [StatId.CostCoeffPct]: 0.4,
-      },
+      id: 'balanced_start',
+      nameRu: 'Сбалансированный старт',
+      descriptionRu: 'Универсальный набор для спокойного развития.',
+      doctrineIds: ['free_market', 'globalism'],
+      intendedPlaystyleRu: ['Делай упор на рынок и порты.', 'Развивай маршруты между городами.'],
+      riskLabel: 'Сдержанный',
     },
     {
-      id: 'EconRush',
-      name: 'Экономика',
-      costPenalty: 0.0012,
-      weights: {
-        [StatId.GoldPerMinPct]: 1.4,
-        [StatId.CostCoeffPct]: 0.7,
-        [StatId.TradeSlots]: 0.5,
-        [StatId.ResourceYieldPct]: 0.4,
-      },
-    },
-    {
-      id: 'TradeEmpire',
-      name: 'Торговля',
-      costPenalty: 0.0013,
-      weights: {
-        [StatId.TradeRadiusPct]: 1.3,
-        [StatId.TradeShipSpeedPct]: 0.9,
-        [StatId.TradeSlots]: 1.1,
-        [StatId.GoldPerMinPct]: 0.6,
-      },
-    },
-    {
-      id: 'ScienceRush',
-      name: 'Наука',
-      costPenalty: 0.0014,
-      weights: {
-        [StatId.ResearchPerMinPct]: 1.3,
-        [StatId.ScienceLevelPct]: 1.1,
-        [StatId.GoldPerMinPct]: 0.4,
-      },
+      id: 'autarky_core',
+      nameRu: 'Крепость и производство',
+      descriptionRu: 'Упор на добычу и внутреннюю стабильность.',
+      doctrineIds: ['planned_economy', 'isolationism'],
+      intendedPlaystyleRu: ['Быстро закрывай базовые ресурсы.', 'Строй оборону и развивай ядро городов.'],
+      riskLabel: 'Рискованный',
     },
   ];
 
-  return { balance, buildings, buildingDefinitions: BUILDING_DEFINITIONS, governments, doctrines, presets };
+  return { balance, buildings, buildingDefinitions: BUILDING_DEFINITIONS, governments, doctrines, doctrinePresets, doctrineConfig: { startPoints: 5, maxPerCategory: 2, categories: ['economy','governance','society','military','science','industry','diplomacy'], reformBaseDurationTurns: 3, reformCooldownTurns: 180, reformBaseGold: 120, reformGoldPerPoint: 30, reformGoldPerExtreme: 80, reformBaseMarble: 0, reformMarblePerDoctrine: 2, reformBaseMetal: 0, reformMetalPerPoint: 1, reformBaseGlass: 0, reformGlassPerDoctrine: 1, reformBaseWood: 0, reformWoodPerDoctrine: 2, reformBasePowder: 0, reformPowderPerExtreme: 0, reformTemporaryModifiers: [{ stat: StatId.HappinessPct, type: 'AddPct', value: -0.1 }, { stat: StatId.BuildSpeedPct, type: 'AddPct', value: -0.1 }, { stat: StatId.WarWeariness, type: 'AddFlat', value: 1 }] } };
 }
