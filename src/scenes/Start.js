@@ -99,10 +99,10 @@ export class Start extends Phaser.Scene {
       if (this.routeMode?.active) this._cancelRouteMode();
 
       this.build.setSelectedBuildType(id);
-      this.ui.highlightSelectedBuilding(id);
+      this.ui.setSelectedBuilding(id);
 
       const def = this.sim.getBuildingDef(id);
-      this.ui.setBuildingInfo(def);
+      this.ui.setBuildInfo(def);
 
       const wantPlacement = !!def?.placeRules?.showPlacementHint;
       this.overlays.setPlacementType(wantPlacement ? id : null);
@@ -118,9 +118,9 @@ export class Start extends Phaser.Scene {
       const rec = this.sim.recommendNextBuilding(this.selectedPresetId);
       if (rec) {
         this.build.setSelectedBuildType(rec);
-        this.ui.highlightSelectedBuilding(rec);
+        this.ui.setSelectedBuilding(rec);
         const def = this.sim.getBuildingDef(rec);
-        this.ui.setBuildingInfo(def);
+        this.ui.setBuildInfo(def);
         const wantPlacement = !!def?.placeRules?.showPlacementHint;
         this.overlays.setPlacementType(wantPlacement ? rec : null);
       }
@@ -153,8 +153,8 @@ export class Start extends Phaser.Scene {
       if (this.demolishMode) {
         this._cancelRouteMode();
         this.build.setSelectedBuildType(null);
-        this.ui.highlightSelectedBuilding(null);
-        this.ui.setBuildingInfo(null);
+        this.ui.setSelectedBuilding(null);
+        this.ui.setBuildInfo(null);
         this.overlays.setPlacementType(null);
       }
     });
@@ -190,6 +190,17 @@ export class Start extends Phaser.Scene {
       }
 
       this.build.updateGhost(this.cfg.worldSeed, p.x, p.y);
+      const selected = this.build.getSelectedBuildType();
+      if (selected) {
+        const placement = this.build.isValidBuildTile(this.cfg.worldSeed, tx, ty);
+        this.ui.setPlacementStatus({
+          ok: placement?.ok,
+          affordabilityOk: placement?.affordabilityOk,
+          reasons: placement?.reasons ?? [],
+        });
+      } else {
+        this.ui.setPlacementStatus({ ok: false, affordabilityOk: true, reasonsText: 'Выберите здание.' });
+      }
     });
 
     this.input.on("pointerdown", (pointer) => {
@@ -275,7 +286,7 @@ export class Start extends Phaser.Scene {
         return;
       }
       this.build.setSelectedBuildType(null);
-      this.ui.highlightSelectedBuilding(null);
+      this.ui.setSelectedBuilding(null);
     });
 
     this.input.keyboard.on("keydown-C", (ev) => {
@@ -294,7 +305,8 @@ export class Start extends Phaser.Scene {
 
     // cancel build mode
     this.build.setSelectedBuildType(null);
-    this.ui.highlightSelectedBuilding(null);
+    this.ui.setSelectedBuilding(null);
+    this.ui.setBuildInfo(null);
 
     this.ui.setTradeStatus(`Режим маршрута: выбери источник (${mode === 'water' ? 'по воде' : 'по земле'}). Клик по хабам.`);
   }
@@ -322,7 +334,7 @@ export class Start extends Phaser.Scene {
       this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
 
       this.build.setSelectedBuildType(null);
-      this.ui.highlightSelectedBuilding(null);
+      this.ui.setSelectedBuilding(null);
 
       this._cancelRouteMode();
     }
@@ -347,7 +359,8 @@ export class Start extends Phaser.Scene {
     const starter = this.sim.getCatalogue().find(b => b.isStarter);
     if (starter) {
       this.build.setSelectedBuildType(starter.id);
-      this.ui.highlightSelectedBuilding(starter.id);
+      this.ui.setSelectedBuilding(starter.id);
+      this.ui.setBuildInfo(starter);
     }
 
     this._rebuildButtonsGate();
