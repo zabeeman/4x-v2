@@ -1,5 +1,5 @@
-// src/world/game/pathfinding.js
-import { sampleHM } from "../infinite/terrainSampler.js";
+// src/world/game/ui/pathfinding.js
+import { sampleHM } from "../../infinite/terrainSampler.js";
 
 function manhattan(ax, ay, bx, by) { return Math.abs(ax - bx) + Math.abs(ay - by); }
 

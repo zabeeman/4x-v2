@@ -1,4 +1,4 @@
-// src/world/game/overlayManager.js
+// src/world/game/ui/overlayManager.js
 // Renders district boundaries, influence radii, and trade routes on top of the world.
 
 function pickColor(idx) {

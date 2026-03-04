@@ -1,4 +1,4 @@
-// src/world/game/gameConfig.js
+// src/world/game/ui/gameConfig.js
 // Central table for ALL gameplay-related constants (tweak here, not in code).
 export const gameConfig = {
   // Spawn

@@ -1,4 +1,4 @@
-// src/world/game/fogOfWar.js
+// src/world/game/ui/fogOfWar.js
 
 function key(cx, cy) { return `${cx},${cy}`; }
 
