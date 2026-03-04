@@ -639,7 +639,8 @@ export class GameSim {
 
     for (const c of this.state.cities) {
       const gMul = c.stats?.pct?.GoldPerMinPct ?? 1;
-      gold += baseGold * gMul;
+      const gFlat = c.stats?.IncomeGoldPerMin ?? 0;
+      gold += baseGold * gMul + gFlat;
       const rMul = (c.stats?.pct?.ResearchPerMinPct ?? 1) * (c.stats?.pct?.ScienceLevelPct ?? 1);
       research += (b.baseResearchPerMin ?? 0.6) * rMul;
     }
