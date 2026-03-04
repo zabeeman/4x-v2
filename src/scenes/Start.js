@@ -103,9 +103,7 @@ export class Start extends Phaser.Scene {
 
       const def = this.sim.getBuildingDef(id);
       this.ui.setBuildInfo(def);
-
-      const wantPlacement = !!def?.placeRules?.showPlacementHint;
-      this.overlays.setPlacementType(wantPlacement ? id : null);
+      this.overlays.setPlacementType(id);
     });
 
     // Presets
@@ -121,8 +119,7 @@ export class Start extends Phaser.Scene {
         this.ui.setSelectedBuilding(rec);
         const def = this.sim.getBuildingDef(rec);
         this.ui.setBuildInfo(def);
-        const wantPlacement = !!def?.placeRules?.showPlacementHint;
-        this.overlays.setPlacementType(wantPlacement ? rec : null);
+        this.overlays.setPlacementType(rec);
       }
     });
 
@@ -287,6 +284,7 @@ export class Start extends Phaser.Scene {
       }
       this.build.setSelectedBuildType(null);
       this.ui.setSelectedBuilding(null);
+      this.overlays.setPlacementType(null);
     });
 
     this.input.keyboard.on("keydown-C", (ev) => {
@@ -356,11 +354,12 @@ export class Start extends Phaser.Scene {
     const u = this.units.addUnitAtTile(spawn.x, spawn.y, { name: "Разведчик" });
     this.units.selectUnit(u.id);
 
-    const starter = this.sim.getCatalogue().find(b => b.isStarter);
+    const starter = this.sim.getCatalogue().find((b) => b.isStarter || b.isHub || b.buildZone?.addsBuildZone);
     if (starter) {
       this.build.setSelectedBuildType(starter.id);
       this.ui.setSelectedBuilding(starter.id);
       this.ui.setBuildInfo(starter);
+      this.overlays.setPlacementType(starter.id);
     }
 
     this._rebuildButtonsGate();
@@ -371,7 +370,8 @@ export class Start extends Phaser.Scene {
     const hasStarter = this.sim.state.cities.length > 0;
 
     for (const t of cat) {
-      const enabled = hasStarter ? true : !!t.isStarter;
+      const isAnchor = !!(t.isStarter || t.isHub || t.buildZone?.addsBuildZone);
+      const enabled = hasStarter ? true : isAnchor;
       this.ui.setBuildingEnabled(t.id, enabled);
     }
   }

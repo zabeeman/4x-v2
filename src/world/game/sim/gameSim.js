@@ -61,9 +61,9 @@ export class GameSim {
     this._bump();
   }
 
-  getCatalogue() { return this.data.buildings; }
+  getCatalogue() { return this.data.buildingDefinitions ?? this.data.buildings; }
 
-  getBuildingDef(id) { return this.data.buildings.find(b => b.id === id) ?? null; }
+  getBuildingDef(id) { return this.getCatalogue().find(b => b.id === id) ?? null; }
 
   getCityById(id) { return this.state.cities.find(c => c.id === id) ?? null; }
 
@@ -197,22 +197,24 @@ export class GameSim {
     return best;
   }
 
-  // Distance (in tiles) from this point to the nearest *build network boundary*.
-  // Approximated as distance to the enclosing circle around each city hub.
-  // 0 means already inside that city's build area union.
+  // Distance (in tiles) to nearest build-zone tile.
+  // Uses exact union of build-zone sources (and starter spawn disk before first city).
   _distanceToBuildNetwork(tx, ty) {
     if (this.state.cities.length === 0) {
       const sp = this.state.spawn;
       if (!sp) return Infinity;
       const r = this.data.balance.district?.firstBuildRadiusTiles ?? 10;
-      const d = dist(sp.tx, sp.ty, tx, ty) - r;
-      return Math.max(0, d);
+      return Math.max(0, dist(sp.tx, sp.ty, tx, ty) - r);
     }
+
+    const sources = this.getBuildAreaSources();
+    if (sources.length === 0) return Infinity;
+
     let best = Infinity;
-    for (const c of this.state.cities) {
-      const encl = this._cityEnclosingBuildRadiusTiles(c);
-      const d = dist(c.hub.tx, c.hub.ty, tx, ty) - encl;
-      best = Math.min(best, Math.max(0, d));
+    for (const s of sources) {
+      const r = s.rTiles ?? 0;
+      if (r <= 0) continue;
+      best = Math.min(best, Math.max(0, dist(tx, ty, s.tx, s.ty) - r));
     }
     return best;
   }
@@ -241,6 +243,12 @@ export class GameSim {
   }
 
   getBuildZoneOwner(tx, ty) {
+    if (this.state.cities.length === 0) {
+      const sp = this.state.spawn;
+      if (!sp) return null;
+      const r = this.data.balance.district?.firstBuildRadiusTiles ?? 10;
+      return dist2(tx, ty, sp.tx, sp.ty) <= r * r ? 'spawn' : null;
+    }
     return this.getOwnerMeta(tx, ty)?.cityId ?? null;
   }
 
@@ -310,8 +318,9 @@ export class GameSim {
   canAfford(typeId) {
     if (this.state.cheats?.infiniteResources) return true;
     const def = this.getBuildingDef(typeId);
-    if (!def?.cost) return true;
-    for (const [k, v] of Object.entries(def.cost)) {
+    const cost = def?.buildCost ?? def?.cost;
+    if (!cost) return true;
+    for (const [k, v] of Object.entries(cost)) {
       if ((this.state.resources[k] ?? 0) < v) return false;
     }
     return true;
@@ -320,8 +329,9 @@ export class GameSim {
   spendCost(typeId) {
     if (this.state.cheats?.infiniteResources) return;
     const def = this.getBuildingDef(typeId);
-    if (!def?.cost) return;
-    for (const [k, v] of Object.entries(def.cost)) {
+    const cost = def?.buildCost ?? def?.cost;
+    if (!cost) return;
+    for (const [k, v] of Object.entries(cost)) {
       this.state.resources[k] = (this.state.resources[k] ?? 0) - v;
     }
   }
@@ -338,7 +348,7 @@ export class GameSim {
     let cityId = placement.cityId;
     let createdCity = null;
 
-    if (def.isStarter || def.isHub) {
+    if (def.isStarter || def.isHub || (!cityId && def.buildZone?.addsBuildZone)) {
       cityId = nowId('city');
       const city = {
         id: cityId,
