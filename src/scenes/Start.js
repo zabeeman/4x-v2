@@ -62,6 +62,17 @@ function saveDoctrineSnapshotToStorage(snapshot) {
   }
 }
 
+async function loadDoctrineCatalog() {
+  try {
+    const response = await fetch('./doctrines_catalog.json');
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export class Start extends Phaser.Scene {
   constructor() {
     super("Start");
