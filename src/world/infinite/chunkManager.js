@@ -544,17 +544,25 @@ function renderWaves(chunk, nowMs) {
 function updateWaveOverlays() {
   if (!waterWaves || chunks.size === 0) return;
   const now = scene.time.now;
-  const arr = Array.from(chunks.values());
-  const n = arr.length;
+  const n = chunks.size;
   if (!n) return;
+
+  waveCursor = waveCursor % n;
 
   let updated = 0;
   let tries = 0;
+  let index = 0;
 
-  while (tries < n && updated < maxWaveUpdatesPerFrame) {
-    const c = arr[waveCursor % n];
-    waveCursor = (waveCursor + 1) % n;
+  for (const c of chunks.values()) {
+    if (updated >= maxWaveUpdatesPerFrame) break;
+
+    if (index < waveCursor) {
+      index++;
+      continue;
+    }
+
     tries++;
+    index++;
 
     if (!c.wave) continue;
     if (c.wave.last >= 0 && (now - c.wave.last) < waveIntervalMs) continue;
@@ -563,6 +571,31 @@ function updateWaveOverlays() {
     c.wave.last = now;
     updated++;
   }
+
+  while (updated < maxWaveUpdatesPerFrame && tries < n) {
+    let wrappedIndex = 0;
+    let progressed = false;
+
+    for (const c of chunks.values()) {
+      if (updated >= maxWaveUpdatesPerFrame || tries >= n) break;
+      if (wrappedIndex >= waveCursor) break;
+
+      tries++;
+      wrappedIndex++;
+      progressed = true;
+
+      if (!c.wave) continue;
+      if (c.wave.last >= 0 && (now - c.wave.last) < waveIntervalMs) continue;
+
+      renderWaves(c, now);
+      c.wave.last = now;
+      updated++;
+    }
+
+    if (!progressed) break;
+  }
+
+  waveCursor = (waveCursor + Math.max(1, updated)) % n;
 }
 
   function processQueue() {

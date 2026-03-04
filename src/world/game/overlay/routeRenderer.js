@@ -10,7 +10,7 @@ export class RouteRenderer {
     this.g = scene.add.graphics();
     this.g.setDepth(905);
 
-    this._lastHash = '';
+    this._lastSig = { routeCount: -1, pathPoints: -1, src: null, hover: null };
   }
 
   destroy() {
@@ -23,12 +23,24 @@ export class RouteRenderer {
 
   render(routes, cities, selection = null) {
     // routes: [{id, mode, segments:[{mode,path:[{x,y}]}], aCityId,bCityId, goldPerMin, safety}]
-    const hash = JSON.stringify({
-      r: routes.map(r => ({ id: r.id, m: r.mode, a: r.aCityId, b: r.bCityId, n: r.segments?.reduce((s, seg) => s + (seg.path?.length ?? 0), 0) ?? 0 })),
-      sel: selection,
-    });
-    if (hash === this._lastHash) return;
-    this._lastHash = hash;
+    let pathPoints = 0;
+    for (const r of routes) {
+      const segs = r.segments ?? [{ mode: r.mode ?? 'land', path: r.path ?? [] }];
+      for (const seg of segs) pathPoints += (seg.path?.length ?? 0);
+    }
+
+    const src = selection?.src ?? null;
+    const hover = selection?.hover ?? null;
+    const sameSig = this._lastSig.routeCount === routes.length
+      && this._lastSig.pathPoints === pathPoints
+      && this._lastSig.src === src
+      && this._lastSig.hover === hover;
+    if (sameSig) return;
+
+    this._lastSig.routeCount = routes.length;
+    this._lastSig.pathPoints = pathPoints;
+    this._lastSig.src = src;
+    this._lastSig.hover = hover;
 
     this.g.clear();
 
