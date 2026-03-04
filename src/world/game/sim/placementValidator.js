@@ -20,8 +20,8 @@ function normalizeRules(def) {
         forbiddenSurfaces: Array.from(forbidden),
         requiresResourceNode: {
           ...(r.requiresResourceNode ?? {}),
-          // For extractors always trust canonical extract resource id.
-          type: String(def.extract.resource).toLowerCase(),
+          // Merge-safe: prefer canonical extractor resource, fallback to explicit node type.
+          type: String(def.extract?.resource ?? r.requiresResourceNode?.type).toLowerCase(),
         },
       };
     }
