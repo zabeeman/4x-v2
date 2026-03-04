@@ -8,6 +8,7 @@ import { getNodeResourceAt, canPlaceExtractorNear } from './resourceSystem.js';
 import { computeCityInfluenceRadius, influenceStrengthAt } from './influenceSystem.js';
 import { recomputeTrade } from './tradeSystem.js';
 import { buildLandRoute, buildWaterRoute } from './routePathfinding.js';
+import { resolveBuildZoneOwner, resolveBuildZoneOwnerMeta } from './buildZoneSystem.js';
 
 function nowId(prefix = 'id') {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
@@ -108,8 +109,8 @@ export class GameSim {
     return { first, second };
   }
 
-  _isDisputed(tx, ty) {
-    return this._isDisputedWithCovered(tx, ty, null);
+  _isDisputed() {
+    return false;
   }
 
   _citiesCoveringTile(tx, ty) {
@@ -120,55 +121,25 @@ export class GameSim {
     return out;
   }
 
-  _ownerFromCovered(tx, ty, covered) {
-    if (!covered || covered.length === 0) return null;
-    let best = null;
-    let bestD2 = Infinity;
-    for (const c of covered) {
-      const d2v = dist2(tx, ty, c.hub.tx, c.hub.ty);
-      if (d2v < bestD2) { bestD2 = d2v; best = c; }
-    }
-    return best;
+  _zoneSourcesCoveringTile(tx, ty) {
+    return this.getBuildAreaSources().filter((s) => {
+      const r = s.rTiles ?? 0;
+      if (r <= 0) return false;
+      const dx = tx - s.tx;
+      const dy = ty - s.ty;
+      return dx * dx + dy * dy <= r * r;
+    });
   }
 
-  // Disputed only makes sense where at least two city build-areas overlap.
-  // Otherwise you get an infinite bisector strip across the whole world.
-  _isDisputedWithCovered(tx, ty, covered) {
-    const buf = this.data.balance.district?.borderBufferTiles ?? 2;
-    const cov = covered ?? this._citiesCoveringTile(tx, ty);
-    if (!cov || cov.length < 2) return false;
-
-    // pick two nearest hubs among the overlapping cities
-    let a = null, b = null;
-    let da = Infinity, db = Infinity;
-    for (const c of cov) {
-      const d2v = dist2(tx, ty, c.hub.tx, c.hub.ty);
-      if (d2v < da) {
-        b = a; db = da;
-        a = c; da = d2v;
-      } else if (d2v < db) {
-        b = c; db = d2v;
-      }
-    }
-    if (!a || !b) return false;
-
-    // Perpendicular bisector strip of fixed width around the bisector line.
-    const dx = b.hub.tx - a.hub.tx;
-    const dy = b.hub.ty - a.hub.ty;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) return false;
-
-    const nx = dx / len;
-    const ny = dy / len;
-    const mx = (a.hub.tx + b.hub.tx) * 0.5;
-    const my = (a.hub.ty + b.hub.ty) * 0.5;
-    const signed = (tx - mx) * nx + (ty - my) * ny;
-    return Math.abs(signed) <= buf;
+  _ownerFromCovered(tx, ty, coveredSources = null) {
+    const sources = coveredSources ?? this._zoneSourcesCoveringTile(tx, ty);
+    if (!sources || sources.length === 0) return null;
+    const cityId = resolveBuildZoneOwner(tx, ty, sources);
+    return cityId ? this.getCityById(cityId) : null;
   }
 
   _findCityForTile(tx, ty) {
-    const covered = this._citiesCoveringTile(tx, ty);
-    return this._ownerFromCovered(tx, ty, covered);
+    return this._ownerFromCovered(tx, ty);
   }
 
   _buildAreaRadiusTilesForDef(def) {
@@ -248,15 +219,8 @@ export class GameSim {
 
   getDistrictInfo(tx, ty) {
     if (this.state.cities.length === 0) return { cityId: null, disputed: false };
-    const covered = this._citiesCoveringTile(tx, ty);
-    if (covered.length === 0) return { cityId: null, disputed: false };
-    if (covered.length === 1) return { cityId: covered[0].id, disputed: false };
-
-    const disputed = this._isDisputedWithCovered(tx, ty, covered);
-    if (disputed) return { cityId: null, disputed: true };
-
-    const owner = this._ownerFromCovered(tx, ty, covered);
-    return { cityId: owner?.id ?? null, disputed: false };
+    const ownerMeta = this.getOwnerMeta(tx, ty);
+    return { cityId: ownerMeta?.cityId ?? null, disputed: false };
   }
 
   // For build-area visualization: union of per-building zones, per district.
@@ -271,14 +235,20 @@ export class GameSim {
       return { cityId: ok ? 'spawn' : null, buildable: ok, disputed: false };
     }
 
-    const covered = this._citiesCoveringTile(tx, ty);
-    if (covered.length === 0) return { cityId: null, buildable: false, disputed: false };
+    const ownerMeta = this.getOwnerMeta(tx, ty);
+    if (!ownerMeta) return { cityId: null, buildable: false, disputed: false };
+    return { cityId: ownerMeta.cityId, buildable: true, disputed: false };
+  }
 
-    const disputed = this._isDisputedWithCovered(tx, ty, covered);
-    if (disputed) return { cityId: null, buildable: false, disputed: true };
+  getBuildZoneOwner(tx, ty) {
+    return this.getOwnerMeta(tx, ty)?.cityId ?? null;
+  }
 
-    const owner = this._ownerFromCovered(tx, ty, covered);
-    return { cityId: owner?.id ?? null, buildable: true, disputed: false };
+  getOwnerMeta(tx, ty) {
+    const sources = this.getBuildAreaSources();
+    const meta = resolveBuildZoneOwnerMeta(tx, ty, sources);
+    if (!meta) return null;
+    return { cityId: meta.cityId, dist: meta.dist, priority: meta.priority };
   }
 
   // For placement preview overlay: returns the same result as canPlaceBuilding
@@ -357,8 +327,6 @@ export class GameSim {
       }
       return { ok: true, cityId: null };
     }
-
-    if (this._isDisputed(tx, ty)) return { ok: false, reason: 'disputed_border' };
 
     // placing new hub creates a new city
     if (def.isHub) {
@@ -688,6 +656,7 @@ export class GameSim {
         ty: b.ty,
         rTiles: this._buildAreaRadiusTilesForDef(def),
         typeId: b.typeId,
+        priority: typeof def?.zonePriority === 'number' ? def.zonePriority : (def?.isHub || def?.isStarter ? 100 : 0),
         isHub: !!(def?.isHub || def?.isStarter),
       });
     }
