@@ -1,14 +1,14 @@
 // src/world/game/sim/gameSim.js
 // Lightweight sim layer: districts (hubs), influence, trade (auto + manual), doctrines, geo resource extraction.
 
-import { sampleHM } from '../../infinite/terrainSampler.js';
 import { dist2, dist, clamp } from './utils.js';
 import { computeCityStats } from './statsSystem.js';
-import { getNodeResourceAt, canPlaceExtractorNear } from './resourceSystem.js';
 import { computeCityInfluenceRadius, influenceStrengthAt } from './influenceSystem.js';
 import { recomputeTrade } from './tradeSystem.js';
 import { buildLandRoute, buildWaterRoute } from './routePathfinding.js';
 import { resolveBuildZoneOwner, resolveBuildZoneOwnerMeta } from './buildZoneSystem.js';
+import { validatePlacement } from './placementValidator.js';
+export { validatePlacement } from './placementValidator.js';
 
 function nowId(prefix = 'id') {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
@@ -254,7 +254,31 @@ export class GameSim {
   // For placement preview overlay: returns the same result as canPlaceBuilding
   // but ignores resource affordability (handled elsewhere).
   getPlacementHint(typeId, tx, ty) {
-    return this.canPlaceBuilding(typeId, tx, ty);
+    return this.validatePlacement(typeId, tx, ty);
+  }
+
+  validatePlacement(typeId, tx, ty) {
+    const def = this.getBuildingDef(typeId);
+    if (!def) {
+      return {
+        ok: false,
+        affordabilityOk: true,
+        reasons: [{ code: 'UNKNOWN_BUILDING' }],
+        cityId: null,
+        footprint: [{ tx, ty }],
+      };
+    }
+
+    return validatePlacement(def, tx, ty, {
+      data: this.data,
+      seed: this.seed,
+      infiniteCfg: this.infiniteCfg,
+      state: this.state,
+      getBuildZoneOwner: (gx, gy) => this.getBuildZoneOwner(gx, gy),
+      distanceToBuildZone: (gx, gy) => this._distanceToBuildNetwork(gx, gy),
+      nearestCity: (gx, gy) => this._nearestCityByHub(gx, gy),
+      canAfford: (id) => this.canAfford(id),
+    });
   }
 
   getInfluenceStrength(tx, ty) {
@@ -278,95 +302,9 @@ export class GameSim {
   // --- Placement rules ---
 
   canPlaceBuilding(typeId, tx, ty) {
-    const def = this.getBuildingDef(typeId);
-    if (!def) return { ok: false, reason: 'unknown_building' };
-
-    // occupied
-    for (const b of this.state.buildings) if (b.tx === tx && b.ty === ty) return { ok: false, reason: 'occupied' };
-
-    // starter gate
-    const hasAnyHub = this.state.cities.length > 0;
-    if (!hasAnyHub && !def.isStarter) return { ok: false, reason: 'need_starter' };
-    // geography constraints
-    const s = sampleHM(this.seed, tx, ty, this.infiniteCfg);
-    const gBuild = this.data.balance.building;
-    const pr = def.placeRules ?? {};
-
-    if (!pr.allowAnySurface) {
-      // global disallow surfaces (unless explicitly ignored)
-      if (!pr.ignoreGlobalDisallowSurfaces) {
-        if (gBuild.disallowSurfacesSet?.has(s.surface)) return { ok: false, reason: 'bad_surface' };
-      }
-      // per-building allowed surfaces
-      if (pr.allowedSurfaces && !pr.allowedSurfaces.includes(s.surface)) {
-        return { ok: false, reason: 'surface_not_allowed' };
-      }
-    }
-
-    if (!pr.ignoreSlope) {
-      if ((s.slope ?? 0) > gBuild.maxSlope) return { ok: false, reason: 'too_steep' };
-    }
-
-    // extractor rules
-    if (def.extract) {
-      const nodeRes = getNodeResourceAt(this.seed, tx, ty, this.infiniteCfg, this.data.balance);
-      if (nodeRes !== def.extract.resource) return { ok: false, reason: 'no_resource_node' };
-      const minDist = this.data.balance.resources?.extractorMinDistanceTiles?.[def.extract.resource] ?? 6;
-      if (!canPlaceExtractorNear(this.state, tx, ty, def.extract.resource, minDist)) {
-        return { ok: false, reason: 'extractor_too_close' };
-      }
-    }
-
-    // district rules
-    if (!hasAnyHub) {
-      // first hub must be within firstBuildRadius around spawn
-      if (!this.state.spawn) return { ok: false, reason: 'no_spawn' };
-      const r = this.data.balance.district?.firstBuildRadiusTiles ?? 10;
-      if (dist2(tx, ty, this.state.spawn.tx, this.state.spawn.ty) > r * r) {
-        return { ok: false, reason: 'out_of_first_area' };
-      }
-      return { ok: true, cityId: null };
-    }
-
-    // placing new hub creates a new city
-    if (def.isHub) {
-      const minHubDist = this.data.balance.district?.minHubDistanceTiles ?? 14;
-      for (const c of this.state.cities) {
-        if (dist2(tx, ty, c.hub.tx, c.hub.ty) < minHubDist * minHubDist) {
-          return { ok: false, reason: 'hub_too_close' };
-        }
-      }
-      if (this.data.balance.district?.allowNewHubOnlyInsideAnyBuildArea) {
-        if (!this._isInSomeCityBuildArea(tx, ty)) {
-          return { ok: false, reason: 'hub_must_be_in_network' };
-        }
-      }
-      return { ok: true, cityId: null };
-    }
-    let city = this._findCityForTile(tx, ty);
-    const allowOutside = def.placeRules?.allowOutsideBuildAreaWithinTiles;
-
-    if (!city) {
-      if (typeof allowOutside === 'number') {
-        const dNet = this._distanceToBuildNetwork(tx, ty);
-        if (dNet > allowOutside) return { ok: false, reason: 'too_far_from_network' };
-        city = this._nearestCityByHub(tx, ty);
-        if (!city) return { ok: false, reason: 'no_city' };
-      } else {
-        return { ok: false, reason: 'no_city' };
-      }
-    }
-
-    if (!this._isInCityBuildArea(city, tx, ty)) {
-      if (typeof allowOutside === 'number') {
-        const dNet = this._distanceToBuildNetwork(tx, ty);
-        if (dNet > allowOutside) return { ok: false, reason: 'too_far_from_network' };
-      } else {
-        return { ok: false, reason: 'out_of_city_area' };
-      }
-    }
-
-    return { ok: true, cityId: city.id };
+    const res = this.validatePlacement(typeId, tx, ty);
+    if (!res.ok) return { ok: false, reason: res.reasons?.[0]?.code ?? 'invalid_placement' };
+    return { ok: true, cityId: res.cityId };
   }
 
   canAfford(typeId) {
@@ -389,15 +327,15 @@ export class GameSim {
   }
 
   placeBuilding(typeId, tx, ty) {
-    const chk = this.canPlaceBuilding(typeId, tx, ty);
-    if (!chk.ok) return { ok: false, reason: chk.reason };
-    if (!this.canAfford(typeId)) return { ok: false, reason: 'no_resources' };
+    const placement = this.validatePlacement(typeId, tx, ty);
+    if (!placement.ok) return { ok: false, reason: placement.reasons?.[0]?.code ?? 'invalid_placement' };
+    if (!placement.affordabilityOk) return { ok: false, reason: 'no_resources' };
 
     const def = this.getBuildingDef(typeId);
     this.spendCost(typeId);
 
     // city assignment
-    let cityId = chk.cityId;
+    let cityId = placement.cityId;
     let createdCity = null;
 
     if (def.isStarter || def.isHub) {
