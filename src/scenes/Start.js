@@ -96,7 +96,7 @@ export class Start extends Phaser.Scene {
     this.gcfg = gameConfig;
 
     // Sim data + sim
-    const doctrineCatalog = this.cache.json.get('doctrine_catalog') ?? null;
+    const doctrineCatalog = this.cache?.json?.get?.('doctrine_catalog') ?? null;
     this.gameData = createDefaultGameData(this.gcfg, doctrineCatalog);
     this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
     this._lastDoctrineSaveRev = -1;
