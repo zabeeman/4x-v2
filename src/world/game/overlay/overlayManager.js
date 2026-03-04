@@ -2,8 +2,6 @@
 // Chunked overlays for district borders and influence.
 // Rendered as canvas textures, similar to terrain chunking.
 
-import { gridToScreen, screenToGrid } from "../../render/isoProjector.js";
-
 function key(cx, cy) { return `${cx},${cy}`; }
 
 function hashStrToHue(str) {
@@ -79,47 +77,6 @@ export class OverlayManager {
     this.districtDepth = 902;
     this.influenceDepth = 903;
     this.placementDepth = 904;
-  }
-
-  _chunkBounds(cx, cy) {
-    if (!this.cfg.isoMode) {
-      return { x: cx * this.chunkPx, y: cy * this.chunkPx, w: this.chunkPx, h: this.chunkPx };
-    }
-    const startGX = cx * this.chunkSize;
-    const startGY = cy * this.chunkSize;
-    const corners = [
-      gridToScreen(startGX, startGY, this.cfg),
-      gridToScreen(startGX + this.chunkSize, startGY, this.cfg),
-      gridToScreen(startGX, startGY + this.chunkSize, this.cfg),
-      gridToScreen(startGX + this.chunkSize, startGY + this.chunkSize, this.cfg),
-    ];
-    const xs = corners.map(c => c.x);
-    const ys = corners.map(c => c.y);
-    const minX = Math.floor(Math.min(...xs) - 2);
-    const minY = Math.floor(Math.min(...ys) - 2);
-    const maxX = Math.ceil(Math.max(...xs) + 2);
-    const maxY = Math.ceil(Math.max(...ys) + 2);
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-  }
-
-  _drawTile(ctx, chunk, gx, gy) {
-    if (!this.cfg.isoMode) {
-      const lx = gx - chunk.cx * this.chunkSize;
-      const ly = gy - chunk.cy * this.chunkSize;
-      ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
-      return;
-    }
-    const p0 = gridToScreen(gx, gy, this.cfg);
-    const p1 = gridToScreen(gx + 1, gy, this.cfg);
-    const p2 = gridToScreen(gx + 1, gy + 1, this.cfg);
-    const p3 = gridToScreen(gx, gy + 1, this.cfg);
-    ctx.beginPath();
-    ctx.moveTo(p0.x - chunk.bounds.x, p0.y - chunk.bounds.y);
-    ctx.lineTo(p1.x - chunk.bounds.x, p1.y - chunk.bounds.y);
-    ctx.lineTo(p2.x - chunk.bounds.x, p2.y - chunk.bounds.y);
-    ctx.lineTo(p3.x - chunk.bounds.x, p3.y - chunk.bounds.y);
-    ctx.closePath();
-    ctx.fill();
   }
 
   setToggles({ showDistrict, showInfluence, showBuildArea, showPlacement }) {
@@ -245,26 +202,10 @@ export class OverlayManager {
     const cam = this.scene.cameras.main;
     const v = cam.worldView;
 
-    let minCX; let maxCX; let minCY; let maxCY;
-    if (!this.cfg.isoMode) {
-      minCX = this._worldToChunkCoord(v.x) - this.marginChunks;
-      maxCX = this._worldToChunkCoord(v.x + v.width) + this.marginChunks;
-      minCY = this._worldToChunkCoord(v.y) - this.marginChunks;
-      maxCY = this._worldToChunkCoord(v.y + v.height) + this.marginChunks;
-    } else {
-      const corners = [
-        screenToGrid(v.x, v.y, this.cfg),
-        screenToGrid(v.x + v.width, v.y, this.cfg),
-        screenToGrid(v.x, v.y + v.height, this.cfg),
-        screenToGrid(v.x + v.width, v.y + v.height, this.cfg),
-      ];
-      const gxs = corners.map(c => c.gx);
-      const gys = corners.map(c => c.gy);
-      minCX = Math.floor((Math.min(...gxs) - this.marginChunks * this.chunkSize) / this.chunkSize);
-      maxCX = Math.floor((Math.max(...gxs) + this.marginChunks * this.chunkSize) / this.chunkSize);
-      minCY = Math.floor((Math.min(...gys) - this.marginChunks * this.chunkSize) / this.chunkSize);
-      maxCY = Math.floor((Math.max(...gys) + this.marginChunks * this.chunkSize) / this.chunkSize);
-    }
+    const minCX = this._worldToChunkCoord(v.x) - this.marginChunks;
+    const maxCX = this._worldToChunkCoord(v.x + v.width) + this.marginChunks;
+    const minCY = this._worldToChunkCoord(v.y) - this.marginChunks;
+    const maxCY = this._worldToChunkCoord(v.y + v.height) + this.marginChunks;
 
     // enqueue any missing chunks
     for (let cy = minCY; cy <= maxCY; cy++) {
@@ -300,52 +241,51 @@ export class OverlayManager {
 
   _loadChunk(cx, cy) {
     const k = key(cx, cy);
-    const bounds = this._chunkBounds(cx, cy);
 
     // Build-area overlay (above fog)
     const bKey = `buildarea_${cx}_${cy}`;
-    const bTex = this.scene.textures.createCanvas(bKey, bounds.w, bounds.h);
+    const bTex = this.scene.textures.createCanvas(bKey, this.chunkPx, this.chunkPx);
     const bCtx = bTex.getContext();
     bCtx.imageSmoothingEnabled = false;
-    const bImg = this.scene.add.image(bounds.x, bounds.y, bKey)
+    const bImg = this.scene.add.image(cx * this.chunkPx, cy * this.chunkPx, bKey)
       .setOrigin(0, 0)
       .setDepth(this.buildAreaDepth)
       .setVisible(this.showBuildArea);
     bImg.setAlpha(0.9);
 
-    this._buildArea.set(k, { cx, cy, texKey: bKey, tex: bTex, ctx: bCtx, img: bImg, version: -1, bounds });
+    this._buildArea.set(k, { cx, cy, texKey: bKey, tex: bTex, ctx: bCtx, img: bImg, version: -1 });
     // Placement overlay (valid tiles for selected building)
     const pKey = `place_${cx}_${cy}`;
-    const pTex = this.scene.textures.createCanvas(pKey, bounds.w, bounds.h);
+    const pTex = this.scene.textures.createCanvas(pKey, this.chunkPx, this.chunkPx);
     const pCtx = pTex.getContext();
     pCtx.imageSmoothingEnabled = false;
-    const pImg = this.scene.add.image(bounds.x, bounds.y, pKey)
+    const pImg = this.scene.add.image(cx * this.chunkPx, cy * this.chunkPx, pKey)
       .setOrigin(0, 0)
       .setDepth(this.placementDepth)
       .setVisible(this.showPlacement && !!this.placementTypeId);
     pImg.setAlpha(0.9);
 
-    this._placement.set(k, { cx, cy, texKey: pKey, tex: pTex, ctx: pCtx, img: pImg, version: -1, bounds });
+    this._placement.set(k, { cx, cy, texKey: pKey, tex: pTex, ctx: pCtx, img: pImg, version: -1 });
 
 
     // District overlay
     const dKey = `district_${cx}_${cy}`;
-    const dTex = this.scene.textures.createCanvas(dKey, bounds.w, bounds.h);
+    const dTex = this.scene.textures.createCanvas(dKey, this.chunkPx, this.chunkPx);
     const dCtx = dTex.getContext();
     dCtx.imageSmoothingEnabled = false;
-    const dImg = this.scene.add.image(bounds.x, bounds.y, dKey)
+    const dImg = this.scene.add.image(cx * this.chunkPx, cy * this.chunkPx, dKey)
       .setOrigin(0, 0)
       .setDepth(this.districtDepth)
       .setVisible(this.showDistrict);
 
-    this._district.set(k, { cx, cy, texKey: dKey, tex: dTex, ctx: dCtx, img: dImg, version: -1, bounds });
+    this._district.set(k, { cx, cy, texKey: dKey, tex: dTex, ctx: dCtx, img: dImg, version: -1 });
 
     // Influence overlay
     const iKey = `influence_${cx}_${cy}`;
-    const iTex = this.scene.textures.createCanvas(iKey, bounds.w, bounds.h);
+    const iTex = this.scene.textures.createCanvas(iKey, this.chunkPx, this.chunkPx);
     const iCtx = iTex.getContext();
     iCtx.imageSmoothingEnabled = false;
-    const iImg = this.scene.add.image(bounds.x, bounds.y, iKey)
+    const iImg = this.scene.add.image(cx * this.chunkPx, cy * this.chunkPx, iKey)
       .setOrigin(0, 0)
       .setDepth(this.influenceDepth)
       .setVisible(this.showInfluence);
@@ -353,7 +293,7 @@ export class OverlayManager {
     // a bit more transparent by default
     iImg.setAlpha(0.85);
 
-    this._influence.set(k, { cx, cy, texKey: iKey, tex: iTex, ctx: iCtx, img: iImg, version: -1, bounds });
+    this._influence.set(k, { cx, cy, texKey: iKey, tex: iTex, ctx: iCtx, img: iImg, version: -1 });
   }
 
   _unloadChunk(cx, cy) {
@@ -387,7 +327,7 @@ export class OverlayManager {
 
   _renderBuildAreaChunk(chunk) {
     const ctx = chunk.ctx;
-    ctx.clearRect(0, 0, chunk.bounds.w, chunk.bounds.h);
+    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
 
     const startGX = chunk.cx * this.chunkSize;
     const startGY = chunk.cy * this.chunkSize;
@@ -406,7 +346,7 @@ export class OverlayManager {
         const hue = hashStrToHue(info.cityId);
         const [r, g, b] = hslToRgb(hue, 0.55, 0.55);
         ctx.fillStyle = rgba(r, g, b, fillAlpha);
-        this._drawTile(ctx, chunk, gx, gy);
+        ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
       }
     }
 
@@ -415,7 +355,7 @@ export class OverlayManager {
 
   _renderDistrictChunk(chunk) {
     const ctx = chunk.ctx;
-    ctx.clearRect(0, 0, chunk.bounds.w, chunk.bounds.h);
+    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
 
     const startGX = chunk.cx * this.chunkSize;
     const startGY = chunk.cy * this.chunkSize;
@@ -441,17 +381,12 @@ export class OverlayManager {
           const hue = hashStrToHue(info.cityId);
           const [r, g, b] = hslToRgb(hue, 0.55, 0.55);
           ctx.fillStyle = rgba(r, g, b, fillAlpha);
-          this._drawTile(ctx, chunk, gx, gy);
+          ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
         } else if (info.disputed) {
           ctx.fillStyle = 'rgba(0,0,0,0.10)';
-          this._drawTile(ctx, chunk, gx, gy);
+          ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
         }
       }
-    }
-
-    if (this.cfg.isoMode) {
-      chunk.tex.refresh();
-      return;
     }
 
     // Borders
@@ -503,7 +438,7 @@ export class OverlayManager {
 
   _renderInfluenceChunk(chunk) {
     const ctx = chunk.ctx;
-    ctx.clearRect(0, 0, chunk.bounds.w, chunk.bounds.h);
+    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
 
     const startGX = chunk.cx * this.chunkSize;
     const startGY = chunk.cy * this.chunkSize;
@@ -518,7 +453,7 @@ export class OverlayManager {
         // blue-ish heat with alpha proportional to influence
         const a = Math.min(0.22, 0.06 + inf * 0.18);
         ctx.fillStyle = `rgba(40, 150, 255, ${a})`;
-        this._drawTile(ctx, chunk, gx, gy);
+        ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
       }
     }
 
@@ -529,7 +464,7 @@ export class OverlayManager {
   // Uses sim.getPlacementHint(typeId, tx, ty) which mirrors canPlaceBuilding() logic.
   _renderPlacementChunk(chunk) {
     const ctx = chunk.ctx;
-    ctx.clearRect(0, 0, chunk.bounds.w, chunk.bounds.h);
+    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
 
     if (!this.placementTypeId) {
       chunk.tex.refresh();
@@ -554,7 +489,7 @@ export class OverlayManager {
         const gy = startGY + ly;
         const res = this.sim.getPlacementHint(this.placementTypeId, gx, gy);
         if (!res?.ok) continue;
-        this._drawTile(ctx, chunk, gx, gy);
+        ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
       }
     }
 

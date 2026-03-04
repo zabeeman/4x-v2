@@ -3,12 +3,6 @@ export const defaultInfiniteConfig = {
   worldSeed: 1,
 
   tileSize: 8,
-  isoMode: false,
-  isoTileW: 16,
-  isoTileH: 8,
-  isoOriginX: 0,
-  isoOriginY: 0,
-
   chunkSize: 64,
   marginChunks: 1,
   maxGenPerFrame: 1,

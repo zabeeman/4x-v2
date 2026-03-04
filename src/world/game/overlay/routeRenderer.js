@@ -1,5 +1,3 @@
-import { gridToScreen } from "../../render/isoProjector.js";
-
 // src/world/game/overlay/routeRenderer.js
 // Draws trade routes as polylines in world space.
 
@@ -20,7 +18,7 @@ export class RouteRenderer {
   }
 
   _tileToWorld(tx, ty) {
-    return gridToScreen(tx + 0.5, ty + 0.5, this.cfg);
+    return { x: (tx + 0.5) * this.tileSize, y: (ty + 0.5) * this.tileSize };
   }
 
   render(routes, cities, selection = null) {

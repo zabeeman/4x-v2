@@ -2,7 +2,6 @@ import { defaultInfiniteConfig } from "../world/infinite/infiniteConfig.js";
 import { terrainPalette } from "../world/infinite/terrainPalette.js";
 import { createChunkManager } from "../world/infinite/chunkManager.js";
 import { createFreeCameraController } from "../world/camera/cameraController.js";
-import { screenToGrid, snapGrid, gridToScreen } from "../world/render/isoProjector.js";
 
 import { gameConfig } from "../world/game/ui/gameConfig.js";
 import { FogOfWar } from "../world/game/ui/fogOfWar.js";
@@ -31,13 +30,6 @@ function parseSeedFromUrlOrDefault(def) {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
-}
-
-function parseBoolQ(name, def = false) {
-  const qs = new URLSearchParams(window.location.search);
-  const v = qs.get(name);
-  if (v == null) return def;
-  return v === "1" || v === "true" || v === "yes";
 }
 
 function parseIntQ(name, def) {
@@ -94,7 +86,6 @@ export class Start extends Phaser.Scene {
     // World config
     this.cfg = { ...defaultInfiniteConfig };
     this.cfg.worldSeed = parseSeedFromUrlOrDefault(this.cfg.worldSeed);
-    this.cfg.isoMode = parseBoolQ("iso", this.cfg.isoMode);
 
     // Camera
     const camCfg = gameConfig.camera;
@@ -249,8 +240,8 @@ export class Start extends Phaser.Scene {
     this.input.on("pointermove", (pointer) => {
       if (this.ui.isPointerOverUI(pointer)) return;
       const p = pointer.positionToCamera(this.cameras.main);
-      const gp = screenToGrid(p.x, p.y, this.cfg);
-      const { ix: tx, iy: ty } = snapGrid(gp.gx, gp.gy);
+      const tx = Math.floor(p.x / this.cfg.tileSize);
+      const ty = Math.floor(p.y / this.cfg.tileSize);
 
       if (this.routeMode.active) {
         const c = this.sim.findCityHubAt(tx, ty, 2);
@@ -277,8 +268,8 @@ export class Start extends Phaser.Scene {
       if (this.ui.isPointerOverUI(pointer)) return;
 
       const p = pointer.positionToCamera(this.cameras.main);
-      const gp = screenToGrid(p.x, p.y, this.cfg);
-      const { ix: tx, iy: ty } = snapGrid(gp.gx, gp.gy);
+      const tx = Math.floor(p.x / this.cfg.tileSize);
+      const ty = Math.floor(p.y / this.cfg.tileSize);
 
       // Route mode has priority
       if (this.routeMode.active) {
@@ -416,9 +407,8 @@ export class Start extends Phaser.Scene {
     const spawn = findSpawn(this.cfg.worldSeed, this.cfg, this.gcfg, other, this.safeDist);
     this.spawn = spawn;
 
-    const spawnPos = gridToScreen(spawn.x + 0.5, spawn.y + 0.5, this.cfg);
-    const wx = spawnPos.x;
-    const wy = spawnPos.y;
+    const wx = (spawn.x + 0.5) * this.cfg.tileSize;
+    const wy = (spawn.y + 0.5) * this.cfg.tileSize;
     this.cameras.main.centerOn(wx, wy);
     this.cameras.main.setZoom(this.gcfg.camera.initialZoom);
 
