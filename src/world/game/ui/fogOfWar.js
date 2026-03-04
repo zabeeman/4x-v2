@@ -1,5 +1,7 @@
 // src/world/game/ui/fogOfWar.js
 
+import { gridToScreen, screenToGrid } from "../../render/isoProjector.js";
+
 function key(cx, cy) { return `${cx},${cy}`; }
 
 export class FogOfWar {
@@ -20,6 +22,27 @@ export class FogOfWar {
     this.dirtySet = new Set();
   }
 
+  _chunkBounds(cx, cy) {
+    if (!this.infiniteCfg.isoMode) {
+      return { x: cx * this.chunkPx, y: cy * this.chunkPx, w: this.chunkPx, h: this.chunkPx };
+    }
+    const startGX = cx * this.chunkTiles;
+    const startGY = cy * this.chunkTiles;
+    const corners = [
+      gridToScreen(startGX, startGY, this.infiniteCfg),
+      gridToScreen(startGX + this.chunkTiles, startGY, this.infiniteCfg),
+      gridToScreen(startGX, startGY + this.chunkTiles, this.infiniteCfg),
+      gridToScreen(startGX + this.chunkTiles, startGY + this.chunkTiles, this.infiniteCfg),
+    ];
+    const xs = corners.map(c => c.x);
+    const ys = corners.map(c => c.y);
+    const minX = Math.floor(Math.min(...xs) - 2);
+    const minY = Math.floor(Math.min(...ys) - 2);
+    const maxX = Math.ceil(Math.max(...xs) + 2);
+    const maxY = Math.ceil(Math.max(...ys) + 2);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
   tileToFogChunk(tx, ty) {
     const cx = Math.floor(tx / this.chunkTiles);
     const cy = Math.floor(ty / this.chunkTiles);
@@ -31,23 +54,24 @@ export class FogOfWar {
     if (this.chunks.has(k)) return this.chunks.get(k);
 
     const texKey = `fog_${cx}_${cy}`;
-    const tex = this.scene.textures.createCanvas(texKey, this.chunkPx, this.chunkPx);
+    const bounds = this._chunkBounds(cx, cy);
+    const tex = this.scene.textures.createCanvas(texKey, bounds.w, bounds.h);
     const ctx = tex.getContext();
     ctx.imageSmoothingEnabled = false;
 
     const data = new Uint8Array(this.chunkTiles * this.chunkTiles);
 
     // fully fogged
-    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
+    ctx.clearRect(0, 0, bounds.w, bounds.h);
     ctx.fillStyle = `rgba(0,0,0,${this.alpha})`;
-    ctx.fillRect(0, 0, this.chunkPx, this.chunkPx);
+    ctx.fillRect(0, 0, bounds.w, bounds.h);
     tex.refresh();
 
-    const img = this.scene.add.image(cx * this.chunkPx, cy * this.chunkPx, texKey)
+    const img = this.scene.add.image(bounds.x, bounds.y, texKey)
       .setOrigin(0, 0)
       .setDepth(this.gameCfg.fog.depth ?? 900);
 
-    const c = { cx, cy, texKey, tex, img, data };
+    const c = { cx, cy, texKey, tex, img, data, bounds };
     this.chunks.set(k, c);
     return c;
   }
@@ -96,16 +120,32 @@ export class FogOfWar {
     ctx.imageSmoothingEnabled = false;
 
     // full fog
-    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
+    ctx.clearRect(0, 0, c.bounds.w, c.bounds.h);
     ctx.fillStyle = `rgba(0,0,0,${this.alpha})`;
-    ctx.fillRect(0, 0, this.chunkPx, this.chunkPx);
+    ctx.fillRect(0, 0, c.bounds.w, c.bounds.h);
 
     // remove fog on revealed tiles
     ctx.globalCompositeOperation = "destination-out";
     for (let ly = 0; ly < this.chunkTiles; ly++) {
       for (let lx = 0; lx < this.chunkTiles; lx++) {
         if (c.data[ly * this.chunkTiles + lx] === 1) {
-          ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
+          if (!this.infiniteCfg.isoMode) {
+            ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
+          } else {
+            const gx = c.cx * this.chunkTiles + lx;
+            const gy = c.cy * this.chunkTiles + ly;
+            const p0 = gridToScreen(gx, gy, this.infiniteCfg);
+            const p1 = gridToScreen(gx + 1, gy, this.infiniteCfg);
+            const p2 = gridToScreen(gx + 1, gy + 1, this.infiniteCfg);
+            const p3 = gridToScreen(gx, gy + 1, this.infiniteCfg);
+            ctx.beginPath();
+            ctx.moveTo(p0.x - c.bounds.x, p0.y - c.bounds.y);
+            ctx.lineTo(p1.x - c.bounds.x, p1.y - c.bounds.y);
+            ctx.lineTo(p2.x - c.bounds.x, p2.y - c.bounds.y);
+            ctx.lineTo(p3.x - c.bounds.x, p3.y - c.bounds.y);
+            ctx.closePath();
+            ctx.fill();
+          }
         }
       }
     }
@@ -118,10 +158,26 @@ export class FogOfWar {
     const v = this.cam.worldView;
     const marginChunks = this.infiniteCfg.marginChunks ?? 2;
 
-    const minCX = Math.floor(v.x / this.chunkPx) - marginChunks;
-    const maxCX = Math.floor((v.x + v.width) / this.chunkPx) + marginChunks;
-    const minCY = Math.floor(v.y / this.chunkPx) - marginChunks;
-    const maxCY = Math.floor((v.y + v.height) / this.chunkPx) + marginChunks;
+    let minCX; let maxCX; let minCY; let maxCY;
+    if (!this.infiniteCfg.isoMode) {
+      minCX = Math.floor(v.x / this.chunkPx) - marginChunks;
+      maxCX = Math.floor((v.x + v.width) / this.chunkPx) + marginChunks;
+      minCY = Math.floor(v.y / this.chunkPx) - marginChunks;
+      maxCY = Math.floor((v.y + v.height) / this.chunkPx) + marginChunks;
+    } else {
+      const corners = [
+        screenToGrid(v.x, v.y, this.infiniteCfg),
+        screenToGrid(v.x + v.width, v.y, this.infiniteCfg),
+        screenToGrid(v.x, v.y + v.height, this.infiniteCfg),
+        screenToGrid(v.x + v.width, v.y + v.height, this.infiniteCfg),
+      ];
+      const gxs = corners.map(c => c.gx);
+      const gys = corners.map(c => c.gy);
+      minCX = Math.floor((Math.min(...gxs) - marginChunks * this.chunkTiles) / this.chunkTiles);
+      maxCX = Math.floor((Math.max(...gxs) + marginChunks * this.chunkTiles) / this.chunkTiles);
+      minCY = Math.floor((Math.min(...gys) - marginChunks * this.chunkTiles) / this.chunkTiles);
+      maxCY = Math.floor((Math.max(...gys) + marginChunks * this.chunkTiles) / this.chunkTiles);
+    }
 
     for (let cy = minCY; cy <= maxCY; cy++) {
       for (let cx = minCX; cx <= maxCX; cx++) this._ensureChunk(cx, cy);
