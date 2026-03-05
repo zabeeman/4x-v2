@@ -53,6 +53,9 @@ export class BuildManager {
     if (!def || !this.sim?.validatePlacement) {
       return { ok: false, affordabilityOk: true, reasons: [{ code: 'NO_SIM' }], cityId: null, footprint: [{ tx, ty }] };
     }
+    if (this.sim?.placementCache && !this.sim.placementCache.canPlaceAt(def.id, tx, ty)) {
+      return { ok: false, affordabilityOk: true, reasons: [{ code: 'CACHE_PRECHECK_FAILED' }], cityId: null, footprint: [{ tx, ty }] };
+    }
     return this.sim.validatePlacement(def.id, tx, ty);
   }
 
