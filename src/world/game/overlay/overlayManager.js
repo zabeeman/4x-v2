@@ -482,7 +482,7 @@ export class OverlayManager {
   }
 
   // Placement helper: highlight tiles where the currently selected building type can be placed.
-  // Uses sim.getPlacementHint(typeId, tx, ty) which mirrors canPlaceBuilding() logic.
+  // Uses precomputed chunk bitsets from placement cache.
   _renderPlacementChunk(chunk) {
     const ctx = chunk.ctx;
     ctx.clearRect(0, 0, chunk.bounds.w, chunk.bounds.h);
@@ -491,9 +491,6 @@ export class OverlayManager {
       chunk.tex.refresh();
       return;
     }
-
-    const startGX = chunk.cx * this.chunkSize;
-    const startGY = chunk.cy * this.chunkSize;
 
     const def = this.sim?.getBuildingDef?.(this.placementTypeId);
     const isExtractor = !!def?.extract;

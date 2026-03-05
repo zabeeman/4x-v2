@@ -41,10 +41,13 @@ export class UnitManager {
       sprite: g,
       path: [],
       moving: false,
+      visionRadiusTiles: opts.visionRadiusTiles ?? this.gameCfg.fog.unitRevealRadiusTiles ?? 6,
+      visionSourceId: `unit_${id}`,
       // optional
       name: opts.name ?? "Юнит",
     };
 
+    if (this.fog) this.fog.upsertVisionSource(u.visionSourceId, tx, ty, u.visionRadiusTiles);
     this.units.push(u);
     return u;
   }
@@ -71,8 +74,15 @@ export class UnitManager {
   }
 
   destroy() {
-    for (const u of this.units) u.sprite.destroy();
+    for (const u of this.units) {
+      u.sprite.destroy();
+    }
     this.units.length = 0;
     this.selectedUnitId = null;
+  }
+
+  updateVisibilityByFog() {
+    if (!this.fog) return;
+    for (const u of this.units) u.sprite.setVisible(this.fog.isTileFullyVisible(u.tx, u.ty));
   }
 }

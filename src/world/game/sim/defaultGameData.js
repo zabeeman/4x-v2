@@ -2,7 +2,114 @@
 import { StatId } from './statsSystem.js';
 import { BUILDINGS as BUILDING_DEFINITIONS } from './buildingCatalog.js';
 
-export function createDefaultGameData(gameCfg) {
+const CATALOG_EFFECT_TO_STAT = {
+  TaxEfficiency: { stat: StatId.GoldPerMinPct, mode: 'ADD' },
+  IncomeGold: { stat: StatId.GoldPerMinPct, mode: 'ADD' },
+  BuildSpeed: { stat: StatId.BuildSpeedPct, mode: 'MUL' },
+  Happiness: { stat: StatId.HappinessPct, mode: 'ADD' },
+  PopCap: { stat: StatId.PopCap, mode: 'ADD' },
+  TradeCapacity: { stat: StatId.TradeSlots, mode: 'ADD' },
+  TradeSpeed: { stat: StatId.TradeShipSpeedPct, mode: 'MUL' },
+  IncomeStability: { stat: StatId.Stability, mode: 'ADD' },
+  Defense: { stat: StatId.Stability, mode: 'ADD' },
+  Corruption: { stat: StatId.Corruption, mode: 'ADD' },
+  GrowthRate: { stat: StatId.HappinessPct, mode: 'ADD' },
+  ProductionAll: { stat: StatId.ResourceYieldPct, mode: 'MUL' },
+};
+
+function mapEffectMode(mode = 'ADD') {
+  if (mode === 'MUL') return 'Mul';
+  return 'AddPct';
+}
+
+function mapDoctrineEffect(effect) {
+  const mapped = CATALOG_EFFECT_TO_STAT[effect?.type];
+  if (!mapped?.stat) return null;
+
+  if ([StatId.PopCap, StatId.TradeSlots, StatId.Stability, StatId.Corruption].includes(mapped.stat)) {
+    return { stat: mapped.stat, type: 'AddFlat', value: Number(effect?.value) || 0 };
+  }
+
+  if (effect?.mode === 'MUL') {
+    return { stat: mapped.stat, type: 'Mul', value: Number(effect?.value) || 1 };
+  }
+
+  return { stat: mapped.stat, type: mapEffectMode(effect?.mode), value: Number(effect?.value) || 0 };
+}
+
+function normalizeCatalogDoctrines(catalog) {
+  return (catalog?.doctrines ?? []).map((d) => {
+    const effects = (d.effects ?? []).map(mapDoctrineEffect).filter(Boolean);
+    return {
+      id: d.id,
+      category: d.category ?? 'other',
+      costPoints: d.costPoints ?? 0,
+      balanceClass: d.balanceClass ?? 'BALANCED',
+      exclusiveGroups: d.exclusiveGroups ?? [],
+      requires: d.requires ?? [],
+      forbids: d.forbids ?? [],
+      recommendedBuildings: d.recommendedBuildings ?? [],
+      recommendedBuildingTags: d.recommendedBuildingTags ?? [],
+      effects,
+      ui: {
+        nameRu: d.ui?.nameRu ?? d.id,
+        shortRu: d.ui?.shortRu ?? '',
+        descriptionRu: d.ui?.descriptionRu ?? '',
+        tagsRu: d.ui?.tagsRu ?? [],
+        icon: d.ui?.icon ?? '📜',
+      },
+    };
+  });
+}
+
+function normalizeCatalogPresets(catalog) {
+  return (catalog?.presets ?? []).map((p) => ({
+    id: p.id,
+    nameRu: p.nameRu,
+    descriptionRu: p.descriptionRu,
+    doctrineIds: p.doctrineIds ?? [],
+    intendedPlaystyleRu: p.intendedPlaystyleRu ?? [],
+    riskLabel: p.riskLabelRu ?? p.riskLabel ?? '',
+  }));
+}
+
+function doctrineConfigFromCatalog(catalog) {
+  const reform = catalog?.reform ?? {};
+  const duration = reform?.duration ?? {};
+  const cost = reform?.cost ?? {};
+  const base = cost?.base ?? {};
+  const perPoint = cost?.perChangedPoint ?? {};
+  const perDoctrine = cost?.perChangedDoctrine ?? {};
+  const perExtreme = cost?.perExtremeInTarget ?? {};
+
+  const reformTemporaryModifiers = (reform?.temporaryEffectsWhileActive ?? [])
+    .map(mapDoctrineEffect)
+    .filter(Boolean);
+
+  return {
+    startPoints: catalog?.points?.startingPointsTotal ?? 5,
+    maxPerCategory: null,
+    categories: (catalog?.categories ?? []).map((c) => c.key),
+    reformBaseDurationTurns: duration?.baseTurns ?? 3,
+    reformCooldownTurns: reform?.cooldownTurns ?? 180,
+    reformBaseGold: base?.gold ?? 120,
+    reformGoldPerPoint: perPoint?.gold ?? 30,
+    reformGoldPerExtreme: perExtreme?.gold ?? 80,
+    reformBaseMarble: base?.marble ?? 0,
+    reformMarblePerDoctrine: perDoctrine?.marble ?? 2,
+    reformBaseMetal: base?.metal ?? 0,
+    reformMetalPerPoint: perPoint?.metal ?? 1,
+    reformBaseGlass: base?.glass ?? 0,
+    reformGlassPerDoctrine: perDoctrine?.glass ?? 1,
+    reformBaseWood: base?.wood ?? 0,
+    reformWoodPerDoctrine: perDoctrine?.wood ?? 2,
+    reformBasePowder: base?.powder ?? 0,
+    reformPowderPerExtreme: perExtreme?.powder ?? 0,
+    reformTemporaryModifiers,
+  };
+}
+
+export function createDefaultGameData(gameCfg, doctrineCatalog = null) {
   const disallowSurfacesArray = Array.from(gameCfg?.building?.disallowSurfaces ?? []);
 
   const balance = {
@@ -259,7 +366,7 @@ export function createDefaultGameData(gameCfg) {
     { id: 'default', name: 'Сбалансированный строй', mods: [] },
   ];
 
-  const doctrines = [
+  const defaultDoctrines = [
     {
       id: 'free_market',
       category: 'economy',
@@ -374,7 +481,7 @@ export function createDefaultGameData(gameCfg) {
     },
   ];
 
-  const doctrinePresets = [
+  const defaultDoctrinePresets = [
     {
       id: 'balanced_start',
       nameRu: 'Сбалансированный старт',
@@ -393,5 +500,11 @@ export function createDefaultGameData(gameCfg) {
     },
   ];
 
-  return { balance, buildings, buildingDefinitions: BUILDING_DEFINITIONS, governments, doctrines, doctrinePresets, doctrineConfig: { startPoints: 5, maxPerCategory: 2, categories: ['economy','governance','society','military','science','industry','diplomacy'], reformBaseDurationTurns: 3, reformCooldownTurns: 180, reformBaseGold: 120, reformGoldPerPoint: 30, reformGoldPerExtreme: 80, reformBaseMarble: 0, reformMarblePerDoctrine: 2, reformBaseMetal: 0, reformMetalPerPoint: 1, reformBaseGlass: 0, reformGlassPerDoctrine: 1, reformBaseWood: 0, reformWoodPerDoctrine: 2, reformBasePowder: 0, reformPowderPerExtreme: 0, reformTemporaryModifiers: [{ stat: StatId.HappinessPct, type: 'AddPct', value: -0.1 }, { stat: StatId.BuildSpeedPct, type: 'AddPct', value: -0.1 }, { stat: StatId.WarWeariness, type: 'AddFlat', value: 1 }] } };
+  const doctrines = doctrineCatalog?.doctrines?.length ? normalizeCatalogDoctrines(doctrineCatalog) : defaultDoctrines;
+  const doctrinePresets = doctrineCatalog?.presets?.length ? normalizeCatalogPresets(doctrineCatalog) : defaultDoctrinePresets;
+  const doctrineConfig = doctrineCatalog
+    ? doctrineConfigFromCatalog(doctrineCatalog)
+    : { startPoints: 5, maxPerCategory: 2, categories: ['economy','governance','society','military','science','industry','diplomacy'], reformBaseDurationTurns: 3, reformCooldownTurns: 180, reformBaseGold: 120, reformGoldPerPoint: 30, reformGoldPerExtreme: 80, reformBaseMarble: 0, reformMarblePerDoctrine: 2, reformBaseMetal: 0, reformMetalPerPoint: 1, reformBaseGlass: 0, reformGlassPerDoctrine: 1, reformBaseWood: 0, reformWoodPerDoctrine: 2, reformBasePowder: 0, reformPowderPerExtreme: 0, reformTemporaryModifiers: [{ stat: StatId.HappinessPct, type: 'AddPct', value: -0.1 }, { stat: StatId.BuildSpeedPct, type: 'AddPct', value: -0.1 }, { stat: StatId.WarWeariness, type: 'AddFlat', value: 1 }] };
+
+  return { balance, buildings, buildingDefinitions: BUILDING_DEFINITIONS, governments, doctrines, doctrinePresets, doctrineConfig };
 }

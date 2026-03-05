@@ -1,0 +1,531 @@
+{
+  "schemaVersion": 1,
+  "resources": ["gold", "wood", "glass", "powder", "marble", "metal"],
+  "points": {
+    "startingPointsTotal": 10,
+    "allowUnspentPoints": true
+  },
+  "ui": {
+    "screenTitleRu": "Доктрины",
+    "presetBlockTitleRu": "Готовые курсы державы",
+    "customBuildTitleRu": "Собственный курс",
+    "pointsLabelRu": "Очки доктрин",
+    "applyAtStartButtonRu": "Утвердить курс",
+    "proposeReformButtonRu": "Предложить реформу",
+    "resetButtonRu": "Сброс",
+    "insufficientPointsRu": "Недостаточно очков",
+    "blockedByConflictRu": "Несовместимо",
+    "blockedByRequirementsRu": "Требуются условия",
+    "extremeWarningRu": "Крайняя мера: может привести к расстройству порядка или сломать баланс при верной тактике"
+  },
+  "categories": [
+    { "key": "GOV_FORM", "nameRu": "Форма правления" },
+    { "key": "GOV_ADMIN", "nameRu": "Государственное управление" },
+    { "key": "ECON_MODEL", "nameRu": "Хозяйственный уклад" },
+    { "key": "SOC_ORDER", "nameRu": "Сословия и общественный порядок" },
+    { "key": "MIL_POLICY", "nameRu": "Военное устройство" },
+    { "key": "EXT_TRADE", "nameRu": "Внешняя торговля и таможня" },
+    { "key": "INDUSTRY_MOD", "nameRu": "Промышленность и модернизация" }
+  ],
+  "effectSystem": {
+    "modes": ["ADD", "MUL", "SET"],
+    "scopes": ["Global", "City", "Radius"],
+    "stackingRules": ["ADD", "MUL", "MAX", "MIN", "UNIQUE"],
+    "knownEffectTypes": [
+      "TaxEfficiency",
+      "IncomeGold",
+      "BuildSpeed",
+      "Corruption",
+      "Crime",
+      "Happiness",
+      "PopCap",
+      "GrowthRate",
+      "TradeCapacity",
+      "TradeSpeed",
+      "IncomeStability",
+      "CreditLimit",
+      "CrisisRisk",
+      "InflationControl",
+      "RecruitCapacity",
+      "RecruitSpeed",
+      "UnitQuality",
+      "UpgradeCost",
+      "Defense",
+      "Overextension",
+      "WarTension",
+      "Smuggling",
+      "Pollution",
+      "EventRisk_Revolt",
+      "EventRisk_Fire",
+      "EventRisk_Accident",
+      "SpecialBuildMaxDistanceBonus",
+      "ProductionAll"
+    ]
+  },
+  "selectionRules": {
+    "maxSelectionsPerCategory": {
+      "GOV_FORM": 1
+    }
+  },
+  "reform": {
+    "enabled": true,
+    "cooldownTurns": 12,
+    "duration": {
+      "baseTurns": 3,
+      "turnsPerChangedPoint": 1
+    },
+    "cost": {
+      "base": { "gold": 200, "wood": 0, "glass": 0, "powder": 0, "marble": 20, "metal": 10 },
+      "perChangedPoint": { "gold": 90, "wood": 10, "glass": 6, "powder": 0, "marble": 6, "metal": 6 },
+      "perChangedDoctrine": { "gold": 40, "wood": 5, "glass": 4, "powder": 0, "marble": 4, "metal": 4 },
+      "perExtremeInTarget": { "gold": 140, "wood": 0, "glass": 0, "powder": 6, "marble": 0, "metal": 10 }
+    },
+    "temporaryEffectsWhileActive": [
+      { "type": "Happiness", "mode": "ADD", "value": -2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+      { "type": "EventRisk_Revolt", "mode": "ADD", "value": 2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+      { "type": "BuildSpeed", "mode": "MUL", "value": 0.9, "scope": "Global", "radius": 0, "stacking": "MUL" }
+    ],
+    "application": {
+      "applyNewDoctrinesOn": "REFORM_COMPLETED",
+      "allowReformIfAnotherActive": false
+    }
+  },
+  "doctrines": [
+    {
+      "id": "DOC_AUTOCRACY",
+      "category": "GOV_FORM",
+      "costPoints": 3,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": ["GOV_FORM"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "Happiness", "mode": "ADD", "value": -1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Corruption", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Defense", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_COURTHOUSE", "GOV_CENSUS_BUREAU", "FIN_TREASURY"],
+      "ui": {
+        "nameRu": "Самодержавный строй",
+        "shortRu": "Воля едина, порядок крепок, но недовольство копится.",
+        "descriptionRu": "Верховная власть сосредоточена в одних руках; решения принимаются быстро и повелительно. Однако всякая ошибка власти становится ошибкой всей державы.",
+        "tagsRu": ["власть", "порядок"]
+      }
+    },
+    {
+      "id": "DOC_CONSTITUTIONAL_MONARCHY",
+      "category": "GOV_FORM",
+      "costPoints": 3,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": ["GOV_FORM"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "IncomeStability", "mode": "ADD", "value": 2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "TaxEfficiency", "mode": "ADD", "value": 0.03, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_TOWN_HALL", "GOV_COURTHOUSE", "FIN_TREASURY"],
+      "ui": {
+        "nameRu": "Конституционная монархия",
+        "shortRu": "Сдержанная власть и счётность дел.",
+        "descriptionRu": "Монарх утверждает верховную силу, однако порядок дел ограничен законом и учреждениями. Державная машина ровнее, но скорость решений средняя.",
+        "tagsRu": ["закон", "устойчивость"]
+      }
+    },
+    {
+      "id": "DOC_PARLIAMENTARY_REPUBLIC",
+      "category": "GOV_FORM",
+      "costPoints": 3,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": ["GOV_FORM"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "TaxEfficiency", "mode": "MUL", "value": 1.06, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Corruption", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Happiness", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_CHANCELLERY", "FIN_TAX_OFFICE", "TRD_MARKET"],
+      "ui": {
+        "nameRu": "Парламентский порядок",
+        "shortRu": "Согласие через речь — но интриги и медлительность рядом.",
+        "descriptionRu": "Дела ведутся через собрание, комитеты и резолюции. Народ благоволит участию, однако фракционные споры растягивают решение насущных мер.",
+        "tagsRu": ["собрание", "комитеты"]
+      }
+    },
+    {
+      "id": "DOC_CENTRALIZED_BUREAUCRACY",
+      "category": "GOV_ADMIN",
+      "costPoints": 2,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "IncomeStability", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "BuildSpeed", "mode": "MUL", "value": 1.04, "scope": "Global", "radius": 0, "stacking": "MUL" }
+      ],
+      "recommendedBuildings": ["GOV_CHANCELLERY", "FIN_TREASURY"],
+      "ui": {
+        "nameRu": "Централизация ведомств",
+        "shortRu": "Счётность и порядок бумаг укрепляются.",
+        "descriptionRu": "Полномочия и отчётность сводятся к центру; распоряжения едины, исполнение строже. Удобно для управления, но требует аппарата.",
+        "tagsRu": ["ведомства", "центр"]
+      }
+    },
+    {
+      "id": "DOC_GENDARMERIE_SUPERVISION",
+      "category": "GOV_ADMIN",
+      "costPoints": 2,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "Crime", "mode": "ADD", "value": -2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Happiness", "mode": "ADD", "value": -1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "EventRisk_Revolt", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_COURTHOUSE", "GOV_CENSUS_BUREAU"],
+      "ui": {
+        "nameRu": "Жандармский надзор",
+        "shortRu": "Тише на улицах — громче ропот в трактирах.",
+        "descriptionRu": "Караулы, дозоры, обыски и наблюдение держат порядок. Однако чрезмерный надзор склоняет народ к скрытому недовольству.",
+        "tagsRu": ["надзор", "порядок"]
+      }
+    },
+    {
+      "id": "DOC_STATISTICAL_CONTROL",
+      "category": "GOV_ADMIN",
+      "costPoints": 3,
+      "balanceClass": "EXTREME",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "TaxEfficiency", "mode": "MUL", "value": 1.15, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Corruption", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Happiness", "mode": "ADD", "value": -2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "EventRisk_Revolt", "mode": "ADD", "value": 3, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_CENSUS_BUREAU", "FIN_TAX_OFFICE"],
+      "ui": {
+        "nameRu": "Поголовный учёт и ревизия",
+        "shortRu": "Казна видит всё — и народ это чувствует.",
+        "descriptionRu": "Все дворы и промыслы заведены в ведомости; ревизорская рука повсюду. При умелом ведении даёт богатство, при неумелом — бунт.",
+        "tagsRu": ["крайняя мера", "ревизия"]
+      }
+    },
+    {
+      "id": "DOC_OPEN_MARKET",
+      "category": "ECON_MODEL",
+      "costPoints": 2,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": ["ECON_CORE"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "TradeCapacity", "mode": "MUL", "value": 1.12, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "IncomeGold", "mode": "ADD", "value": 4, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["TRD_MARKET", "TRD_CARAVANSERAI", "TRD_PORT"],
+      "ui": {
+        "nameRu": "Открытый рынок",
+        "shortRu": "Торг идёт шире, монета вращается быстрее.",
+        "descriptionRu": "Ставка на свободный обмен и частную инициативу. Выигрывает торговля, но порядок и надзор должны поспевать за ростом оборота.",
+        "tagsRu": ["торг", "рынок"]
+      }
+    },
+    {
+      "id": "DOC_PROTECTIONISM",
+      "category": "ECON_MODEL",
+      "costPoints": 2,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": ["ECON_CORE"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "TaxEfficiency", "mode": "ADD", "value": 0.04, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "TradeSpeed", "mode": "MUL", "value": 0.94, "scope": "Global", "radius": 0, "stacking": "MUL" }
+      ],
+      "recommendedBuildings": ["FIN_TAX_OFFICE", "TRD_WAREHOUSE"],
+      "ui": {
+        "nameRu": "Протекционистские пошлины",
+        "shortRu": "Казна крепнет, но оборот замедляется.",
+        "descriptionRu": "Таможенная ограда защищает внутреннего производителя и пополняет казну. Однако внешняя торговля идёт осторожнее и дороже.",
+        "tagsRu": ["пошлины", "таможня"]
+      }
+    },
+    {
+      "id": "DOC_STATE_ORDERS",
+      "category": "ECON_MODEL",
+      "costPoints": 2,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "ProductionAll", "mode": "MUL", "value": 1.08, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Corruption", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["IND_SMELTER", "IND_INDUSTRIAL_COMPLEX", "GOV_CHANCELLERY"],
+      "ui": {
+        "nameRu": "Казённые заказы",
+        "shortRu": "Промышленность оживляется — приписки тоже.",
+        "descriptionRu": "Держава заключает подряды и снабжает заводы заказами. Производство растёт, но соблазн к злоупотреблениям возрастает вместе со сметами.",
+        "tagsRu": ["подряды", "сметы"]
+      }
+    },
+    {
+      "id": "DOC_CIVIL_LIBERTIES",
+      "category": "SOC_ORDER",
+      "costPoints": 2,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": ["SOC_CORE"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "Happiness", "mode": "ADD", "value": 2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Crime", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_COURTHOUSE", "GOV_PRESS_BUREAU"],
+      "ui": {
+        "nameRu": "Гражданские вольности",
+        "shortRu": "Люд доволен, но надзор ослабевает.",
+        "descriptionRu": "Собрания, печать и право слова расширены. Мирнее на сердце у народа, однако нарушители пользуются снисхождением.",
+        "tagsRu": ["вольности", "печать"]
+      }
+    },
+    {
+      "id": "DOC_MARTIAL_ORDER",
+      "category": "SOC_ORDER",
+      "costPoints": 2,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": ["SOC_CORE"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "Crime", "mode": "ADD", "value": -1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Happiness", "mode": "ADD", "value": -2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "EventRisk_Revolt", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["GOV_CENSUS_BUREAU", "MIL_BARRACKS"],
+      "ui": {
+        "nameRu": "Твёрдый порядок",
+        "shortRu": "Нарушителей меньше — недовольных больше.",
+        "descriptionRu": "Комендантские распоряжения и строгая дисциплина умиротворяют улицу. Однако жёсткость даёт отдалённый, но опасный ропот.",
+        "tagsRu": ["дисциплина", "строгость"]
+      }
+    },
+    {
+      "id": "DOC_PROFESSIONAL_ARMY",
+      "category": "MIL_POLICY",
+      "costPoints": 2,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": ["MIL_CORE"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "UnitQuality", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "RecruitCapacity", "mode": "ADD", "value": -1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["MIL_TRAINING_GROUNDS", "MIL_RANGE_SCHOOL", "MIL_ARSENAL"],
+      "ui": {
+        "nameRu": "Профессиональная армия",
+        "shortRu": "Меньше рекрутов, больше умения.",
+        "descriptionRu": "Ставка на обученные части и кадровый состав. Качество растёт, но массового наплыва войска ждать не приходится.",
+        "tagsRu": ["кадры", "учение"]
+      }
+    },
+    {
+      "id": "DOC_MASS_MOBILIZATION",
+      "category": "MIL_POLICY",
+      "costPoints": 3,
+      "balanceClass": "EXTREME",
+      "exclusiveGroups": ["MIL_CORE"],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "RecruitCapacity", "mode": "MUL", "value": 1.35, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Happiness", "mode": "ADD", "value": -2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "IncomeGold", "mode": "ADD", "value": -3, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["MIL_WAR_OFFICE", "MIL_BARRACKS", "MIL_ARSENAL"],
+      "ui": {
+        "nameRu": "Всеобщая мобилизация",
+        "shortRu": "Войска много — казна и люд редеют.",
+        "descriptionRu": "Держава ставит под ружьё широкие массы. Сила велика, но хозяйство и настроение народа терпят неизбежный урон.",
+        "tagsRu": ["крайняя мера", "мобилизация"]
+      }
+    },
+    {
+      "id": "DOC_FREE_TRADE_TREATIES",
+      "category": "EXT_TRADE",
+      "costPoints": 2,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": [],
+      "requires": ["DOC_OPEN_MARKET"],
+      "forbids": [],
+      "effects": [
+        { "type": "TradeSpeed", "mode": "MUL", "value": 1.08, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Smuggling", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["TRD_PORT", "TRD_FREE_HARBOR", "TRD_WAREHOUSE"],
+      "ui": {
+        "nameRu": "Торговые договоры",
+        "shortRu": "Караваны идут охотнее — тень контрабанды растёт.",
+        "descriptionRu": "Соглашения с соседями упрощают оборот и бумаги. Однако там, где оборот велик, всегда найдутся желающие пройти мимо кассы.",
+        "tagsRu": ["договоры", "оборот"]
+      }
+    },
+    {
+      "id": "DOC_PORT_FRANCO",
+      "category": "EXT_TRADE",
+      "costPoints": 3,
+      "balanceClass": "EXTREME",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "TradeCapacity", "mode": "MUL", "value": 1.25, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "IncomeGold", "mode": "MUL", "value": 1.10, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Smuggling", "mode": "ADD", "value": 3, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Crime", "mode": "ADD", "value": 2, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["TRD_FREE_HARBOR", "TRD_PORT", "GOV_COURTHOUSE"],
+      "ui": {
+        "nameRu": "Порт-франко (вольные причалы)",
+        "shortRu": "Оборот велик — но и тень велика.",
+        "descriptionRu": "Вольный режим для пристаней и складов умножает торговый ход. При слабом надзоре превращается в рассадник контрабанды и ночных сделок.",
+        "tagsRu": ["крайняя мера", "порт"]
+      }
+    },
+    {
+      "id": "DOC_INDUSTRIAL_PUSH",
+      "category": "INDUSTRY_MOD",
+      "costPoints": 3,
+      "balanceClass": "SWINGY",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "ProductionAll", "mode": "MUL", "value": 1.15, "scope": "Global", "radius": 0, "stacking": "MUL" },
+        { "type": "Pollution", "mode": "ADD", "value": 2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "EventRisk_Accident", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["IND_SMELTER", "IND_INDUSTRIAL_COMPLEX", "IND_MINE"],
+      "ui": {
+        "nameRu": "Индустриальный рывок",
+        "shortRu": "Выпуск растёт — дым и аварии рядом.",
+        "descriptionRu": "Ставка на цех и печь ускоряет державное хозяйство. При отсутствии надзора растут аварии и недовольство от копоти.",
+        "tagsRu": ["заводы", "ускорение"]
+      }
+    },
+    {
+      "id": "DOC_TECH_INSPECTIONS",
+      "category": "INDUSTRY_MOD",
+      "costPoints": 2,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "EventRisk_Accident", "mode": "ADD", "value": -2, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "ProductionAll", "mode": "MUL", "value": 0.98, "scope": "Global", "radius": 0, "stacking": "MUL" }
+      ],
+      "recommendedBuildings": ["GOV_COURTHOUSE", "GOV_CHANCELLERY"],
+      "ui": {
+        "nameRu": "Технические инспекции",
+        "shortRu": "Аварий меньше — бумажной волокиты больше.",
+        "descriptionRu": "Инспекторский надзор и предписания уменьшают несчастья. Взамен производство идёт чуть осторожнее и медленнее.",
+        "tagsRu": ["инспекции", "техника безопасности"]
+      }
+    },
+    {
+      "id": "DOC_FRONTIER_COMMISSIONS",
+      "category": "GOV_ADMIN",
+      "costPoints": 1,
+      "balanceClass": "BALANCED",
+      "exclusiveGroups": [],
+      "requires": [],
+      "forbids": [],
+      "effects": [
+        { "type": "SpecialBuildMaxDistanceBonus", "mode": "ADD", "value": 25, "scope": "Global", "radius": 0, "stacking": "ADD" },
+        { "type": "Overextension", "mode": "ADD", "value": 1, "scope": "Global", "radius": 0, "stacking": "ADD" }
+      ],
+      "recommendedBuildings": ["EXP_EXPANSION_POST", "EXP_EXPEDITION_HQ", "EXP_SURVEY_BEACON"],
+      "ui": {
+        "nameRu": "Окраинные комиссии",
+        "shortRu": "Освоение дальше — управление растягивается.",
+        "descriptionRu": "Комиссии по окраинам дают право на дальние промеры и промыслы. Однако центр неизбежно теряет часть управляемости на удалении.",
+        "tagsRu": ["окраины", "комиссии"]
+      }
+    }
+  ],
+  "presets": [
+    {
+      "id": "PRESET_DEMO_LIB_OPEN",
+      "nameRu": "Парламент + открытый рынок + договорная торговля",
+      "riskLabelRu": "Рискованный",
+      "descriptionRu": "Курс на торговый рост и довольство народа; требует суда и учёта, иначе утонете в контрабанде и приписках.",
+      "intendedPlaystyleRu": [
+        "Ставка на торг и золото: рынок, пакгаузы, порт.",
+        "Компенсируйте рост преступности судом и надзором.",
+        "Не заходите в крайние меры без запаса казны."
+      ],
+      "doctrineIds": [
+        "DOC_PARLIAMENTARY_REPUBLIC",
+        "DOC_OPEN_MARKET",
+        "DOC_FREE_TRADE_TREATIES",
+        "DOC_CIVIL_LIBERTIES"
+      ]
+    },
+    {
+      "id": "PRESET_ORDER_CENTRAL",
+      "nameRu": "Самодержавие + централизация + твёрдый порядок",
+      "riskLabelRu": "Сдержанный",
+      "descriptionRu": "Курс на управляемость, порядок и выправку аппарата. Торг идёт медленнее, зато держава держится крепче.",
+      "intendedPlaystyleRu": [
+        "Упор в управление: управа, канцелярия, суд.",
+        "Не перегибайте с надзором: держите казну и настроение.",
+        "Экспансию ведите через окраинные посты под контролем."
+      ],
+      "doctrineIds": [
+        "DOC_AUTOCRACY",
+        "DOC_CENTRALIZED_BUREAUCRACY",
+        "DOC_MARTIAL_ORDER"
+      ]
+    },
+    {
+      "id": "PRESET_MIL_EXTREME",
+      "nameRu": "Крайняя мера: мобилизация и военный курс",
+      "riskLabelRu": "Крайняя мера",
+      "descriptionRu": "Ставка на силу войска. Может принести победу быстрым нажимом или разорить хозяйство, если затянете кампанию.",
+      "intendedPlaystyleRu": [
+        "Играйте на темпе: короткая война или решающий удар.",
+        "Казна должна быть заранее подготовлена.",
+        "Без дисциплины и суда получите смуту."
+      ],
+      "doctrineIds": [
+        "DOC_MASS_MOBILIZATION",
+        "DOC_GENDARMERIE_SUPERVISION"
+      ]
+    },
+    {
+      "id": "PRESET_INDUSTRY_STATE",
+      "nameRu": "Казённые заказы + индустриальный рывок",
+      "riskLabelRu": "Рискованный",
+      "descriptionRu": "Ускорение промышленности и строек: выпуск растёт, но дым, аварии и приписки потребуют жёсткой руки и инспекций.",
+      "intendedPlaystyleRu": [
+        "Рано ставьте плавильню и комбинат — но берегите порядок.",
+        "Инспекции спасают от аварийной ямы.",
+        "Планируйте реформы заранее: рывок любит стабильность."
+      ],
+      "doctrineIds": [
+        "DOC_STATE_ORDERS",
+        "DOC_INDUSTRIAL_PUSH",
+        "DOC_TECH_INSPECTIONS"
+      ]
+    }
+  ]
+}

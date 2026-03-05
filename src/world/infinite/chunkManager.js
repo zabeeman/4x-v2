@@ -67,6 +67,7 @@ export function createChunkManager(scene, cfg, palette) {
   let queueHead = 0;
   let cacheTick = 0;
   const chunkCacheLimit = Math.max(0, cfg.chunkCacheLimit ?? 48);
+  let lastViewChunkBounds = null;
 
   function worldToChunkCoord(worldX) { return Math.floor(worldX / chunkPx); }
 
@@ -465,21 +466,36 @@ return { texKey, img, wave };
     pruneCache();
   }
 
+  function sameChunkBounds(a, b) {
+    return !!a && !!b
+      && a.minCX === b.minCX
+      && a.maxCX === b.maxCX
+      && a.minCY === b.minCY
+      && a.maxCY === b.maxCY;
+  }
+
   function updateNeededChunks() {
     const v = cam.worldView;
 
     const { minCX, maxCX, minCY, maxCY } = worldViewToChunkRange(v, cfg, chunkSize, cfg.marginChunks);
 
-    for (let cy = minCY; cy <= maxCY; cy++) {
-      for (let cx = minCX; cx <= maxCX; cx++) {
-        if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
-      }
-    }
+    const currentBounds = { minCX, maxCX, minCY, maxCY };
+    const boundsChanged = !sameChunkBounds(lastViewChunkBounds, currentBounds);
 
-    for (const c of chunks.values()) {
-      if (c.cx < minCX || c.cx > maxCX || c.cy < minCY || c.cy > maxCY) {
-        unloadChunk(c.cx, c.cy);
+    if (boundsChanged) {
+      for (let cy = minCY; cy <= maxCY; cy++) {
+        for (let cx = minCX; cx <= maxCX; cx++) {
+          if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
+        }
       }
+
+      for (const c of chunks.values()) {
+        if (c.cx < minCX || c.cx > maxCX || c.cy < minCY || c.cy > maxCY) {
+          unloadChunk(c.cx, c.cy);
+        }
+      }
+
+      lastViewChunkBounds = currentBounds;
     }
   }
 
@@ -555,17 +571,25 @@ function renderWaves(chunk, nowMs) {
 function updateWaveOverlays() {
   if (!waterWaves || chunks.size === 0) return;
   const now = scene.time.now;
-  const arr = Array.from(chunks.values());
-  const n = arr.length;
+  const n = chunks.size;
   if (!n) return;
+
+  waveCursor = waveCursor % n;
 
   let updated = 0;
   let tries = 0;
+  let index = 0;
 
-  while (tries < n && updated < maxWaveUpdatesPerFrame) {
-    const c = arr[waveCursor % n];
-    waveCursor = (waveCursor + 1) % n;
+  for (const c of chunks.values()) {
+    if (updated >= maxWaveUpdatesPerFrame) break;
+
+    if (index < waveCursor) {
+      index++;
+      continue;
+    }
+
     tries++;
+    index++;
 
     if (!c.wave) continue;
     if (c.wave.last >= 0 && (now - c.wave.last) < waveIntervalMs) continue;
@@ -574,6 +598,31 @@ function updateWaveOverlays() {
     c.wave.last = now;
     updated++;
   }
+
+  while (updated < maxWaveUpdatesPerFrame && tries < n) {
+    let wrappedIndex = 0;
+    let progressed = false;
+
+    for (const c of chunks.values()) {
+      if (updated >= maxWaveUpdatesPerFrame || tries >= n) break;
+      if (wrappedIndex >= waveCursor) break;
+
+      tries++;
+      wrappedIndex++;
+      progressed = true;
+
+      if (!c.wave) continue;
+      if (c.wave.last >= 0 && (now - c.wave.last) < waveIntervalMs) continue;
+
+      renderWaves(c, now);
+      c.wave.last = now;
+      updated++;
+    }
+
+    if (!progressed) break;
+  }
+
+  waveCursor = (waveCursor + Math.max(1, updated)) % n;
 }
 
   function processQueue() {
