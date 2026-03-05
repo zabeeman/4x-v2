@@ -57,6 +57,10 @@ export class FogOfWar {
     return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
   }
 
+  _chunkBounds(cx, cy) {
+    return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
+  }
+
   tileToFogChunk(tx, ty) {
     return {
       cx: Math.floor(tx / this.chunkTiles),
