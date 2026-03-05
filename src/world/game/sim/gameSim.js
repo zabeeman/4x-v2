@@ -70,6 +70,8 @@ export class GameSim {
 
     this._accMs = 0;
     this._occupiedTileSet = new Set();
+    this._activeZoneBoundsCache = null;
+    this._activeZoneBoundsRev = -1;
     this._buildZoneProvider = new BuildZoneProvider(this);
     this._worldProvider = new WorldProvider(this, this.infiniteCfg);
     this._placementRules = new RulesCompiler().compileRulesFromCatalog(this.getCatalogue());
@@ -88,6 +90,51 @@ export class GameSim {
 
   getDistanceToActiveZone(tx, ty) {
     return this._distanceToBuildNetwork(tx, ty);
+  }
+
+  getActiveZoneBoundsTiles() {
+    if (this._activeZoneBoundsRev === this._rev && this._activeZoneBoundsCache) {
+      return this._activeZoneBoundsCache;
+    }
+
+    let minTx = Infinity;
+    let minTy = Infinity;
+    let maxTx = -Infinity;
+    let maxTy = -Infinity;
+
+    if (this.state.cities.length === 0) {
+      const sp = this.state.spawn;
+      if (sp) {
+        const r = this.data.balance.district?.firstBuildRadiusTiles ?? 10;
+        minTx = sp.tx - r;
+        minTy = sp.ty - r;
+        maxTx = sp.tx + r;
+        maxTy = sp.ty + r;
+      }
+    } else {
+      const sources = this.getZoneSources();
+      for (const s of sources) {
+        const r = Math.max(0, Math.floor(s.rTiles ?? 0));
+        const sx = Math.floor(s.tx ?? s.centerTx ?? 0);
+        const sy = Math.floor(s.ty ?? s.centerTy ?? 0);
+        minTx = Math.min(minTx, sx - r);
+        minTy = Math.min(minTy, sy - r);
+        maxTx = Math.max(maxTx, sx + r);
+        maxTy = Math.max(maxTy, sy + r);
+      }
+    }
+
+    if (!Number.isFinite(minTx)) {
+      const fallback = { minTx: -200, minTy: -200, maxTx: 200, maxTy: 200 };
+      this._activeZoneBoundsCache = fallback;
+      this._activeZoneBoundsRev = this._rev;
+      return fallback;
+    }
+
+    const out = { minTx, minTy, maxTx, maxTy };
+    this._activeZoneBoundsCache = out;
+    this._activeZoneBoundsRev = this._rev;
+    return out;
   }
 
   getFogRadiusBonuses() {
