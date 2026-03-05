@@ -118,7 +118,14 @@ export class BuildManager {
       .setDepth(Math.floor(pos.y) + 1100)
       .setInteractive();
 
-    const bVis = { id: placed?.id ?? `${type.id}_${Date.now()}`, typeId: type.id, tx, ty, sprite: spr };
+    const bVis = {
+      id: placed?.id ?? `${type.id}_${Date.now()}`,
+      typeId: type.id,
+      tx,
+      ty,
+      sprite: spr,
+      visionSourceId: `building_${placed?.id ?? `${type.id}_${tx}_${ty}`}`
+    };
     spr.on('pointerdown', () => {
       this.selectedBuildingId = bVis.id;
     });
