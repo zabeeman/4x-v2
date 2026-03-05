@@ -644,7 +644,7 @@ function updateWaveOverlays() {
     }
   }
 
-  return {
+  const publicApi = {
     update() {
       updateNeededChunks();
       processQueue();
@@ -659,4 +659,7 @@ function updateWaveOverlays() {
       return { tx: s.ix, ty: s.iy };
     },
   };
+
+  return publicApi;
 }
+

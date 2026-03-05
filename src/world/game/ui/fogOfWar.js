@@ -53,6 +53,10 @@ export class FogOfWar {
     return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
   }
 
+  _chunkBounds(cx, cy) {
+    return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
+  }
+
   tileToFogChunk(tx, ty) {
     return {
       cx: Math.floor(tx / this.chunkTiles),
@@ -180,19 +184,6 @@ export class FogOfWar {
     ctx.clearRect(0, 0, c.bounds.w, c.bounds.h);
     ctx.fillStyle = `rgba(0,0,0,${this.alpha})`;
     ctx.fillRect(0, 0, c.bounds.w, c.bounds.h);
-
-    ctx.fillStyle = `rgba(0,0,0,${this.terrainFogAlpha})`;
-    for (let ly = 0; ly < this.chunkTiles; ly++) {
-      for (let lx = 0; lx < this.chunkTiles; lx++) {
-        const idx = ly * this.chunkTiles + lx;
-        const { byte, mask } = bitAddr(idx);
-        const terrain = (state.terrainBits[byte] & mask) !== 0;
-        const full = (state.fullBits[byte] & mask) !== 0;
-        if (terrain && !full) {
-          ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
-        }
-      }
-    }
 
     ctx.globalCompositeOperation = "destination-out";
     for (let ly = 0; ly < this.chunkTiles; ly++) {

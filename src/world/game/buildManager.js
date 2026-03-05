@@ -128,7 +128,6 @@ export class BuildManager {
       ty,
       sprite: spr,
       visionSourceId: `building_${placed?.id ?? `${type.id}_${tx}_${ty}`}`
-      visionSourceId: `building_${placed?.id ?? `${type.id}_${tx}_${ty}`}`,
     };
     spr.on('pointerdown', () => {
       this.selectedBuildingId = bVis.id;
