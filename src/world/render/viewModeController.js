@@ -69,6 +69,12 @@ export function createViewModeController(scene, opts = {}) {
     return { x: w.wx, y: w.wy };
   }
 
+
+  function screenToWorld(px, py) {
+    const view = coords.screenToWorld(px, py);
+    return viewToWorld(view.x, view.y);
+  }
+
   function viewToTile(sx, sy) {
     const world = viewToWorld(sx, sy);
     return coords.worldToTile(world.x, world.y);
@@ -315,7 +321,7 @@ export function createViewModeController(scene, opts = {}) {
     viewToTile,
     tileToView,
     viewDeltaToWorldDelta,
-    screenToWorld: coords.screenToWorld,
+    screenToWorld,
     worldToTile: coords.worldToTile,
     tileToWorldAnchor: coords.tileToWorldAnchor,
     tileToIsoScreen: coords.tileToIsoScreen,
