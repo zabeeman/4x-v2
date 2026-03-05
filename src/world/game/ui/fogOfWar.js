@@ -239,6 +239,8 @@ export class FogOfWar {
   }
 
   // Backward-compatible no-op for old callsites.
+  upsertVisionSource() {}
+  removeVisionSource() {}
   revealCircle() {}
   discoverCircle() {}
 
