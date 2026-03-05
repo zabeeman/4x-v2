@@ -46,6 +46,12 @@ export function createViewModeController(scene, opts = {}) {
     };
   }
 
+  function viewDeltaToWorldDelta(dx, dy) {
+    const dgx = (dx / halfW + dy / halfH) / 2;
+    const dgy = (dy / halfH - dx / halfW) / 2;
+    return { x: dgx * tileSize, y: dgy * tileSize };
+  }
+
   function worldToView(x, y) {
     if (mode !== 'isometric') return { x, y };
     const gx = x / tileSize;
@@ -160,8 +166,16 @@ export function createViewModeController(scene, opts = {}) {
 
     const p = worldToView(base.x, base.y);
     if (typeof obj.setPosition === 'function') obj.setPosition(p.x, p.y);
-    if (typeof obj.setRotation === 'function') obj.setRotation(base.rotation);
-    if (typeof obj.setScale === 'function') obj.setScale(base.scaleX, base.scaleY * 0.92);
+
+    const isTileDiamond = !!obj.getData?.('isoTileDiamond');
+    if (isTileDiamond) {
+      if (typeof obj.setAngle === 'function') obj.setAngle((base.angle ?? 0) + 45);
+      if (typeof obj.setScale === 'function') obj.setScale(base.scaleX, base.scaleY * 0.5);
+    } else {
+      if (typeof obj.setRotation === 'function') obj.setRotation(base.rotation);
+      if (typeof obj.setScale === 'function') obj.setScale(base.scaleX, base.scaleY * 0.92);
+    }
+
     if (typeof obj.setDepth === 'function') obj.setDepth(base.depth + (p.y * 1e-4));
   }
 
@@ -242,6 +256,7 @@ export function createViewModeController(scene, opts = {}) {
     },
     worldToView,
     viewToWorld,
+    viewDeltaToWorldDelta,
     update,
   };
 }

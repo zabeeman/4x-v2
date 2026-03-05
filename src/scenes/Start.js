@@ -141,6 +141,7 @@ export class Start extends Phaser.Scene {
       tileSize: this.cfg.tileSize,
       chunkSize: this.cfg.chunkSize,
     });
+    this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
 
     // Build palette
     const catalogue = this.sim.getCatalogue();
