@@ -19,6 +19,7 @@ import { createViewModeController } from "../world/render/viewModeController.js"
 import { ChunkCacheService } from "../world/cache/ChunkCacheService.js";
 import { WorldStreamer } from "../world/stream/WorldStreamer.js";
 import { IsoInputController } from "../input/IsoInputController.js";
+import { IsoTileWindowRenderer } from "../render/IsoTileWindowRenderer.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -157,6 +158,17 @@ export class Start extends Phaser.Scene {
       tileSize: this.cfg.tileSize,
       chunkSize: this.cfg.chunkSize,
     });
+
+    this.isoTileWindow = new IsoTileWindowRenderer(this, {
+      cfg: this.cfg,
+      palette: terrainPalette,
+      tileW: this.viewModeCtl.tileW,
+      tileH: this.viewModeCtl.tileH,
+      windowW: 80,
+      windowH: 80,
+    });
+    this._isoWindowAccumMs = 0;
+    this._isoWindowTickMs = 80;
     this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
 
     // Build placement uses the same coordinate service as view/click systems.
@@ -268,10 +280,12 @@ export class Start extends Phaser.Scene {
     this.ui.setViewModeHandler(() => {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
+      this._syncTerrainRenderMode(mode);
       this._refreshGhostUnderPointer();
       if (this._lastPick) this._updateHoverHighlight(this._lastPick.tx, this._lastPick.ty, true);
     });
     this.ui.setViewMode(this.viewModeCtl.getMode());
+    this._syncTerrainRenderMode(this.viewModeCtl.getMode());
 
     // Manual trade routes
     this.routeMode = { active: false, mode: 'land', srcCityId: null, hoverCityId: null };
@@ -339,6 +353,7 @@ export class Start extends Phaser.Scene {
     this.input.keyboard.on("keydown-V", () => {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
+      this._syncTerrainRenderMode(mode);
       this._refreshGhostUnderPointer();
     });
 
@@ -352,6 +367,8 @@ export class Start extends Phaser.Scene {
     this.events.once('shutdown', () => {
       this.isoInput?.destroy();
       this.isoInput = null;
+      this.isoTileWindow?.destroy?.();
+      this.isoTileWindow = null;
       this.input?.keyboard?.removeAllListeners();
     });
   }
@@ -543,6 +560,12 @@ export class Start extends Phaser.Scene {
     }
   }
 
+  _syncTerrainRenderMode(mode = this.viewModeCtl?.getMode?.() ?? "topdown") {
+    const iso = mode === "isometric";
+    this.chunkMgr?.setVisible?.(!iso);
+    this.isoTileWindow?.setVisible?.(iso);
+  }
+
   _rebuildButtonsGate() {
     const cat = this.sim.getCatalogue();
     const hasStarter = this.sim.state.cities.length > 0;
@@ -560,6 +583,18 @@ export class Start extends Phaser.Scene {
     this.cameraCtl.update();
     this.viewModeCtl?.update();
     this.chunkMgr.update();
+
+    const mode = this.viewModeCtl?.getMode?.() ?? "topdown";
+    this._syncTerrainRenderMode(mode);
+    if (mode === "isometric" && this.isoTileWindow) {
+      this._isoWindowAccumMs += dt;
+      if (this._isoWindowAccumMs >= this._isoWindowTickMs) {
+        this._isoWindowAccumMs = 0;
+        const center = this.viewModeCtl.worldToTile(this.cameras.main.midPoint.x, this.cameras.main.midPoint.y);
+        this.isoTileWindow.updateFromCenter(center.tx, center.ty);
+      }
+    }
+
     this.viewModeCtl?.update();
     this.fog.setAggressiveIsoOptimization(false);
     this.fog.update();
