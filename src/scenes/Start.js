@@ -16,6 +16,8 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
 import { createViewModeController } from "../world/render/viewModeController.js";
+import { ChunkCacheService } from "../world/cache/ChunkCacheService.js";
+import { WorldStreamer } from "../world/stream/WorldStreamer.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -111,6 +113,11 @@ export class Start extends Phaser.Scene {
 
     // Terrain
     this.chunkMgr = createChunkManager(this, this.cfg, terrainPalette);
+    this.chunkGenVersion = 1;
+    this.chunkCache = new ChunkCacheService({ maxWorkers: 2, ramLimit: 96 });
+    this.worldStreamer = new WorldStreamer({ cacheService: this.chunkCache, radiusChunks: 2, prefetchConcurrency: 2 });
+    this._streamTickAccumMs = 0;
+    this._streamTickEveryMs = 250;
 
     // Gameplay config
     this.gcfg = gameConfig;
@@ -519,6 +526,13 @@ export class Start extends Phaser.Scene {
     }
 
     this._rebuildButtonsGate();
+
+    if (this.worldStreamer) {
+      this.worldStreamer.updateActiveCenter(spawn.x, spawn.y);
+      this.worldStreamer.tick(this.cfg.worldSeed, this.chunkGenVersion).catch((err) => {
+        console.warn("[WorldStreamer] initial tick failed", err);
+      });
+    }
   }
 
   _rebuildButtonsGate() {
@@ -587,6 +601,16 @@ export class Start extends Phaser.Scene {
     if (rev !== this._lastDoctrineSaveRev) {
       this._lastDoctrineSaveRev = rev;
       saveDoctrineSnapshotToStorage(this.sim.exportDoctrineSnapshot());
+    }
+
+    this._streamTickAccumMs += dt;
+    if (this._streamTickAccumMs >= this._streamTickEveryMs && this.worldStreamer) {
+      this._streamTickAccumMs = 0;
+      const center = this.viewModeCtl.worldToTile(this.cameras.main.midPoint.x, this.cameras.main.midPoint.y);
+      this.worldStreamer.updateActiveCenter(center.tx, center.ty);
+      this.worldStreamer.tick(this.cfg.worldSeed, this.chunkGenVersion).catch((err) => {
+        console.warn("[WorldStreamer] tick failed", err);
+      });
     }
 
     // UI (throttled to reduce per-frame string allocations/layout churn)
