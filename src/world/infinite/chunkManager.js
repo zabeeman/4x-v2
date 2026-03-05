@@ -36,6 +36,7 @@ export function createChunkManager(scene, cfg, palette) {
   const queued = new Set();
   const queue = [];
   let queueHead = 0;
+  let lastViewChunkBounds = null;
 
   let cacheTick = 0;
   const chunkCacheLimit = Math.max(0, cfg.chunkCacheLimit ?? 48);
@@ -231,6 +232,8 @@ export function createChunkManager(scene, cfg, palette) {
   function updateNeededChunks() {
     const v = cam.worldView;
     const { minCX, maxCX, minCY, maxCY } = worldViewToChunkRange(v, cfg, chunkSize, cfg.marginChunks);
+    const currentBounds = { minCX, maxCX, minCY, maxCY };
+    const boundsChanged = !sameChunkBounds(currentBounds, lastViewChunkBounds);
 
     if (boundsChanged) {
       for (let cy = minCY; cy <= maxCY; cy++) {
@@ -291,4 +294,3 @@ export function createChunkManager(scene, cfg, palette) {
 
   return publicApi;
 }
-
