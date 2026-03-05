@@ -1,3 +1,5 @@
+import { createCoordinateService } from './coordinateService.js';
+
 export function createViewModeController(scene, opts = {}) {
   const camera = scene.cameras.main;
 
@@ -8,6 +10,8 @@ export function createViewModeController(scene, opts = {}) {
   const tileH = Number.isFinite(opts.tileH) ? opts.tileH : tileW / 2;
   const halfW = tileW / 2;
   const halfH = tileH / 2;
+
+  const coords = createCoordinateService(scene, { tileSize, tileW, tileH });
 
   const baseState = new WeakMap();
   const isoTextureCache = new Map();
@@ -22,6 +26,15 @@ export function createViewModeController(scene, opts = {}) {
 
   function isDynamicChunkTextureKey(key) {
     return /^(wave|fog|buildarea|place|district|influence)_/.test(key);
+  }
+
+
+  function normalizeBaseTextureKey(key) {
+    if (typeof key !== 'string') return key ?? null;
+    if (!key.startsWith('iso_')) return key;
+    const original = key.slice(4);
+    if (scene.textures.exists(original)) return original;
+    return key;
   }
 
   function parseChunkKey(key) {
@@ -55,30 +68,34 @@ export function createViewModeController(scene, opts = {}) {
 
   function worldToView(x, y) {
     if (mode !== 'isometric') return { x, y };
-    const gx = x / tileSize;
-    const gy = y / tileSize;
-    return gridToScreen(gx, gy);
+    const iso = coords.worldToIsoScreen(x, y);
+    return { x: iso.sx, y: iso.sy };
   }
 
   function viewToWorld(x, y) {
     if (mode !== 'isometric') return { x, y };
-    const g = screenToGrid(x, y);
-    return { x: g.x * tileSize, y: g.y * tileSize };
+    const w = coords.isoScreenToWorld(x, y);
+    return { x: w.wx, y: w.wy };
+  }
+
+
+  function screenToWorld(px, py) {
+    const view = coords.screenToWorld(px, py);
+    return viewToWorld(view.x, view.y);
   }
 
   function viewToTile(sx, sy) {
-    if (mode !== 'isometric') {
-      return { tx: Math.floor(sx / tileSize), ty: Math.floor(sy / tileSize) };
-    }
-    const g = screenToGrid(sx, sy);
-    return { tx: Math.floor(g.x), ty: Math.floor(g.y) };
+    const world = viewToWorld(sx, sy);
+    return coords.worldToTile(world.x, world.y);
   }
 
   function tileToView(tx, ty) {
     if (mode !== 'isometric') {
-      return { x: (tx + 0.5) * tileSize, y: (ty + 0.5) * tileSize };
+      const anchor = coords.tileToWorldAnchor(tx, ty);
+      return { x: anchor.wx, y: anchor.wy };
     }
-    return gridToScreen(tx + 0.5, ty + 0.5);
+    const iso = coords.tileToIsoScreen(tx, ty);
+    return { x: iso.sx, y: iso.sy };
   }
 
   function remember(obj) {
@@ -93,7 +110,7 @@ export function createViewModeController(scene, opts = {}) {
       originX: obj.originX ?? 0.5,
       originY: obj.originY ?? 0.5,
       depth: obj.depth ?? 0,
-      textureKey: obj.texture?.key ?? null,
+      textureKey: normalizeBaseTextureKey(obj.texture?.key ?? null),
       appliedX: null,
       appliedY: null,
     });
@@ -161,14 +178,19 @@ export function createViewModeController(scene, opts = {}) {
     const tKey = base.textureKey ?? obj.texture?.key ?? '';
     if (isChunkTextureKey(tKey)) return;
 
+    const isTileDiamond = !!obj.getData?.('isoTileDiamond');
+
     const ax = base.appliedX;
     const ay = base.appliedY;
     if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
       base.x = obj.x ?? base.x;
       base.y = obj.y ?? base.y;
-      base.rotation = obj.rotation ?? base.rotation;
-      base.scaleX = obj.scaleX ?? base.scaleX;
-      base.scaleY = obj.scaleY ?? base.scaleY;
+
+      if (mode !== 'isometric' && !isTileDiamond) {
+        base.rotation = obj.rotation ?? base.rotation;
+        base.scaleX = obj.scaleX ?? base.scaleX;
+        base.scaleY = obj.scaleY ?? base.scaleY;
+      }
       return;
     }
 
@@ -176,9 +198,16 @@ export function createViewModeController(scene, opts = {}) {
     if (movedByGame) {
       base.x = obj.x ?? base.x;
       base.y = obj.y ?? base.y;
-      base.rotation = obj.rotation ?? base.rotation;
-      base.scaleX = obj.scaleX ?? base.scaleX;
-      base.scaleY = obj.scaleY ?? base.scaleY;
+
+      // While isometric transforms are active, obj.rotation/scale are render-time values
+      // (angle/scale skew applied by this controller), not logical game-space base values.
+      // Do not feed them back into base state, otherwise toggling view modes distorts objects
+      // such as ghost diamonds into thin slashes.
+      if (mode !== 'isometric' && !isTileDiamond) {
+        base.rotation = obj.rotation ?? base.rotation;
+        base.scaleX = obj.scaleX ?? base.scaleX;
+        base.scaleY = obj.scaleY ?? base.scaleY;
+      }
     }
   }
 
@@ -258,7 +287,7 @@ export function createViewModeController(scene, opts = {}) {
         originX: obj.originX ?? 0.5,
         originY: obj.originY ?? 0.5,
         depth: obj.depth ?? 0,
-        textureKey: obj.texture?.key ?? null,
+        textureKey: normalizeBaseTextureKey(obj.texture?.key ?? null),
       appliedX: null,
       appliedY: null,
       });
@@ -313,6 +342,10 @@ export function createViewModeController(scene, opts = {}) {
     viewToTile,
     tileToView,
     viewDeltaToWorldDelta,
+    screenToWorld,
+    worldToTile: coords.worldToTile,
+    tileToWorldAnchor: coords.tileToWorldAnchor,
+    tileToIsoScreen: coords.tileToIsoScreen,
     update,
   };
 }
