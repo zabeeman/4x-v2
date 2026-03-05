@@ -47,6 +47,7 @@ export function createViewModeController(scene, opts = {}) {
   }
 
   function viewDeltaToWorldDelta(dx, dy) {
+    if (mode !== 'isometric') return { x: dx, y: dy };
     const dgx = (dx / halfW + dy / halfH) / 2;
     const dgy = (dy / halfH - dx / halfW) / 2;
     return { x: dgx * tileSize, y: dgy * tileSize };
@@ -63,6 +64,21 @@ export function createViewModeController(scene, opts = {}) {
     if (mode !== 'isometric') return { x, y };
     const g = screenToGrid(x, y);
     return { x: g.x * tileSize, y: g.y * tileSize };
+  }
+
+  function viewToTile(sx, sy) {
+    if (mode !== 'isometric') {
+      return { tx: Math.floor(sx / tileSize), ty: Math.floor(sy / tileSize) };
+    }
+    const g = screenToGrid(sx, sy);
+    return { tx: Math.floor(g.x), ty: Math.floor(g.y) };
+  }
+
+  function tileToView(tx, ty) {
+    if (mode !== 'isometric') {
+      return { x: (tx + 0.5) * tileSize, y: (ty + 0.5) * tileSize };
+    }
+    return gridToScreen(tx + 0.5, ty + 0.5);
   }
 
   function remember(obj) {
@@ -256,6 +272,8 @@ export function createViewModeController(scene, opts = {}) {
     },
     worldToView,
     viewToWorld,
+    viewToTile,
+    tileToView,
     viewDeltaToWorldDelta,
     update,
   };

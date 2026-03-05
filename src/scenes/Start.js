@@ -261,8 +261,9 @@ export class Start extends Phaser.Scene {
       if (this.ui.isPointerOverUI(pointer)) return;
       const pCam = pointer.positionToCamera(this.cameras.main);
       const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
-      const tx = Math.floor(p.x / this.cfg.tileSize);
-      const ty = Math.floor(p.y / this.cfg.tileSize);
+      const tilePos = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
+      const tx = tilePos.tx;
+      const ty = tilePos.ty;
 
       if (this.routeMode.active) {
         const c = this.sim.findCityHubAt(tx, ty, 2);
@@ -271,7 +272,9 @@ export class Start extends Phaser.Scene {
         return;
       }
 
-      this.build.updateGhost(this.cfg.worldSeed, p.x, p.y);
+      const vc = this.viewModeCtl.tileToView(tx, ty);
+      const worldGhost = this.viewModeCtl.viewToWorld(vc.x, vc.y);
+      this.build.updateGhost(this.cfg.worldSeed, worldGhost.x, worldGhost.y);
       const selected = this.build.getSelectedBuildType();
       if (selected) {
         const placement = this.build.isValidBuildTile(this.cfg.worldSeed, tx, ty);
@@ -290,9 +293,9 @@ export class Start extends Phaser.Scene {
       if (this.ui.isPointerOverUI(pointer)) return;
 
       const pCam = pointer.positionToCamera(this.cameras.main);
-      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
-      const tx = Math.floor(p.x / this.cfg.tileSize);
-      const ty = Math.floor(p.y / this.cfg.tileSize);
+      const tilePos = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
+      const tx = tilePos.tx;
+      const ty = tilePos.ty;
 
       // Route mode has priority
       if (this.routeMode.active) {
