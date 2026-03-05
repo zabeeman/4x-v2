@@ -756,13 +756,19 @@ export class UIManager {
 
     const focus = docs.find((d) => d.id === this.doctrineFocusId) ?? null;
     if (focus) {
+      const focusName = focus.ui && focus.ui.nameRu ? focus.ui.nameRu : focus.id;
+      const focusDescription = focus.ui && focus.ui.descriptionRu ? focus.ui.descriptionRu : '—';
+      const focusConflicts = (focus.exclusiveGroups || []).join(', ') || '—';
+      const focusRequires = (focus.requires || []).join(', ') || '—';
+      const focusForbids = (focus.forbids || []).join(', ') || '—';
+
       right.textContent = [
-        focus.ui?.nameRu ?? focus.id,
-        focus.ui?.descriptionRu ?? '—',
-        `Эффекты: ${this._renderDoctrineEffects(focus)}`,
-        `Конфликты: ${(focus.exclusiveGroups ?? []).join(', ') || '—'}`,
-        `Требования: ${(focus.requires ?? []).join(', ') || '—'}`,
-        `Запреты: ${(focus.forbids ?? []).join(', ') || '—'}`,
+        focusName,
+        focusDescription,
+        'Эффекты: ' + this._renderDoctrineEffects(focus),
+        'Конфликты: ' + focusConflicts,
+        'Требования: ' + focusRequires,
+        'Запреты: ' + focusForbids,
       ].join('\n');
     } else {
       right.textContent = 'Нет доктрин в категории';
