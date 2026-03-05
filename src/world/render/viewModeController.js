@@ -21,7 +21,7 @@ export function createViewModeController(scene, opts = {}) {
   }
 
   function isDynamicChunkTextureKey(key) {
-    return /^(wave|fog)_/.test(key);
+    return /^(wave|fog|buildarea|place|district|influence)_/.test(key);
   }
 
   function parseChunkKey(key) {

@@ -16,6 +16,7 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
 import { createViewModeController } from "../world/render/viewModeController.js";
+import { createTilePickerTopDown, createTilePickerIso } from "../world/render/tilePickers.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);

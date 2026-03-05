@@ -1,4 +1,5 @@
 // src/world/game/ui/overlayManager.js
+// Legacy module: active runtime overlay manager lives in src/world/game/overlay/overlayManager.js.
 // Renders district boundaries, influence radii, and trade routes on top of the world.
 
 function pickColor(idx) {
