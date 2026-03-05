@@ -290,6 +290,9 @@ export class UIManager {
     this.btnDemolish = el('button', 'ui-btn', extraRow);
     this.btnDemolish.textContent = 'Снос: выкл';
 
+    this.btnViewMode = el('button', 'ui-btn', extraRow);
+    this.btnViewMode.textContent = 'Вид: top-down';
+
     const infWrap = el('label', 'ui-check', extraRow);
     this.chkInfinite = el('input', '', infWrap);
     this.chkInfinite.type = 'checkbox';
@@ -574,6 +577,16 @@ export class UIManager {
   setInfiniteResourcesHandler(fn) {
     if (!this.chkInfinite) return;
     this.chkInfinite.onchange = () => fn(this.chkInfinite.checked);
+  }
+
+  setViewModeHandler(fn) {
+    if (!this.btnViewMode) return;
+    this.btnViewMode.onclick = () => fn?.();
+  }
+
+  setViewMode(mode) {
+    if (!this.btnViewMode) return;
+    this.btnViewMode.textContent = mode === 'isometric' ? 'Вид: изометрия' : 'Вид: top-down';
   }
 
   setTradeRouteHandlers({ onLand, onWater, onCancel }) {

@@ -20,6 +20,8 @@ export class BuildManager {
       .setStrokeStyle(2, 0xffffff, 0.35)
       .setDepth(1500)
       .setVisible(false);
+    this.ghost.setDataEnabled();
+    this.ghost.setData("isoTileDiamond", true);
 
     this._valid = false;
     this._afford = false;
