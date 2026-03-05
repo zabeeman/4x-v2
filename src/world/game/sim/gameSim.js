@@ -71,6 +71,36 @@ export class GameSim {
 
   getRevision() { return this._rev; }
 
+  getDistanceToActiveZone(tx, ty) {
+    return this._distanceToBuildNetwork(tx, ty);
+  }
+
+  getFogRadiusBonuses() {
+    let fullInfoBonusTiles = 0;
+    let terrainInfoBonusTiles = 0;
+
+    for (const b of this.state.buildings) {
+      const def = this.getBuildingDef(b.typeId);
+      if (!def) continue;
+
+      const both = Number(def.fogRadiusBonusTiles ?? 0);
+      const full = Number(def.fogFullInfoBonusTiles ?? 0);
+      const terrain = Number(def.fogTerrainInfoBonusTiles ?? 0);
+
+      if (Number.isFinite(both)) {
+        fullInfoBonusTiles += both;
+        terrainInfoBonusTiles += both;
+      }
+      if (Number.isFinite(full)) fullInfoBonusTiles += full;
+      if (Number.isFinite(terrain)) terrainInfoBonusTiles += terrain;
+    }
+
+    return {
+      fullInfoBonusTiles,
+      terrainInfoBonusTiles,
+    };
+  }
+
   _bump() { this._rev++; }
 
   setSpawn(tx, ty) {

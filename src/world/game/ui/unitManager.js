@@ -72,8 +72,15 @@ export class UnitManager {
   }
 
   destroy() {
-    for (const u of this.units) u.sprite.destroy();
+    for (const u of this.units) {
+      u.sprite.destroy();
+    }
     this.units.length = 0;
     this.selectedUnitId = null;
+  }
+
+  updateVisibilityByFog() {
+    if (!this.fog) return;
+    for (const u of this.units) u.sprite.setVisible(this.fog.isTileFullyVisible(u.tx, u.ty));
   }
 }

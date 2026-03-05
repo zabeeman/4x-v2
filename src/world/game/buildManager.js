@@ -130,10 +130,6 @@ export class BuildManager {
     };
     this.buildings.push(bVis);
 
-    // reveal fog around building
-    const rr = type.fogRevealRadiusTiles ?? this.gameCfg.fog.buildingRevealRadiusTiles;
-    if (this.fog) this.fog.revealCircle(tx, ty, rr);
-
     return bVis;
   }
 
@@ -155,7 +151,14 @@ export class BuildManager {
 
   destroy() {
     this.ghost.destroy();
-    for (const b of this.buildings) b.sprite.destroy();
+    for (const b of this.buildings) {
+      b.sprite.destroy();
+    }
     this.buildings.length = 0;
+  }
+
+  updateVisibilityByFog() {
+    if (!this.fog) return;
+    for (const b of this.buildings) b.sprite.setVisible(this.fog.isTileFullyVisible(b.tx, b.ty));
   }
 }
