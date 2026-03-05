@@ -152,8 +152,6 @@ export class Start extends Phaser.Scene {
     });
     this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
 
-    this.topDownPicker = createTilePickerTopDown({ tileSize: this.cfg.tileSize });
-    this.isoPicker = createTilePickerIso({ tileSize: this.cfg.tileSize, tileW: this.cfg.tileSize * 2, tileH: this.cfg.tileSize });
 
     this.debugTilePick = parseBoolQ('debugTilePick', false);
     this.tilePickDebugText = this.add.text(12, 12, '', { fontSize: '12px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.55)', padding: { x: 6, y: 4 } })
@@ -407,17 +405,20 @@ export class Start extends Phaser.Scene {
     });
   }
 
-  _getActivePicker() {
-    return this.viewModeCtl.getMode() === 'isometric' ? this.isoPicker : this.topDownPicker;
-  }
-
   _pickTile(pointer) {
-    const picker = this._getActivePicker();
-    const result = picker.pick(pointer, this.cameras.main) ?? {};
+    const pCam = pointer.positionToCamera(this.cameras.main);
+    const tile = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
+    const world = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
+
     return {
-      tx: result.gx,
-      ty: result.gy,
-      raw: result,
+      tx: tile.tx,
+      ty: tile.ty,
+      raw: {
+        worldX: world.x,
+        worldY: world.y,
+        gxFloat: world.x / this.cfg.tileSize,
+        gyFloat: world.y / this.cfg.tileSize,
+      },
     };
   }
 
@@ -432,7 +433,6 @@ export class Start extends Phaser.Scene {
       `gridFloat: ${(raw.gxFloat ?? 0).toFixed(3)}, ${(raw.gyFloat ?? 0).toFixed(3)}`,
       `grid: ${pick.tx}, ${pick.ty}`,
     ];
-    if (mode === 'isometric') lines.push(`diamond n: ${(raw.nx ?? 0).toFixed(3)}, ${(raw.ny ?? 0).toFixed(3)}`);
     this.tilePickDebugText.setText(lines.join('\n'));
 
   }
