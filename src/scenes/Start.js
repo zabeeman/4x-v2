@@ -155,7 +155,6 @@ export class Start extends Phaser.Scene {
     this.topDownPicker = createTilePickerTopDown({ tileSize: this.cfg.tileSize });
     this.isoPicker = createTilePickerIso({ tileSize: this.cfg.tileSize, tileW: this.cfg.tileSize * 2, tileH: this.cfg.tileSize });
 
-    this.buildHoverGfx = this.add.graphics().setDepth(1510).setScrollFactor(1).setVisible(false);
     this.debugTilePick = parseBoolQ('debugTilePick', false);
     this.tilePickDebugText = this.add.text(12, 12, '', { fontSize: '12px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.55)', padding: { x: 6, y: 4 } })
       .setDepth(5000)
@@ -303,7 +302,6 @@ export class Start extends Phaser.Scene {
         this.ui.setPlacementStatus({ ok: false, affordabilityOk: true, reasonsText: 'Выберите здание.' });
       }
 
-      this._renderBuildHover(tx, ty, selected, pick);
       this._renderPickDebug(pointer, pick);
     });
 
@@ -349,6 +347,7 @@ export class Start extends Phaser.Scene {
 
       // Build placement
       if (this.build.getSelectedBuildType()) {
+        this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
         const b = this.build.tryPlaceSelected(this.cfg.worldSeed);
         if (b) {
           const def = this.sim.getBuildingDef(b.typeId);
@@ -422,39 +421,6 @@ export class Start extends Phaser.Scene {
     };
   }
 
-  _renderBuildHover(tx, ty, selected, pick) {
-    this.buildHoverGfx.clear();
-
-    if (!selected) {
-      this.build.setGhostVisible(false);
-      this.buildHoverGfx.setVisible(false);
-      return;
-    }
-
-    const mode = this.viewModeCtl.getMode();
-    if (mode !== 'isometric') {
-      this.build.setGhostVisible(true);
-      this.buildHoverGfx.setVisible(false);
-      return;
-    }
-
-    this.build.setGhostVisible(false);
-    this.buildHoverGfx.setVisible(true);
-    const style = this.build.getGhostStyle();
-    this.isoPicker.drawHighlight(this.buildHoverGfx, tx, ty, this.cameras.main, style);
-
-    if (this.debugTilePick) {
-      const top = this.isoPicker.gridToWorld(tx, ty, this.cameras.main);
-      this.buildHoverGfx.lineStyle(1, 0xffffff, 0.9);
-      this.buildHoverGfx.strokeLineShape(new Phaser.Geom.Line(top.x - 4, top.y, top.x + 4, top.y));
-      this.buildHoverGfx.strokeLineShape(new Phaser.Geom.Line(top.x, top.y - 4, top.x, top.y + 4));
-
-      const centerY = top.y + this.isoPicker.halfH;
-      this.buildHoverGfx.strokeLineShape(new Phaser.Geom.Line(top.x - 4, centerY, top.x + 4, centerY));
-      this.buildHoverGfx.strokeLineShape(new Phaser.Geom.Line(top.x, centerY - 4, top.x, centerY + 4));
-    }
-  }
-
   _renderPickDebug(pointer, pick) {
     if (!this.debugTilePick || !this.tilePickDebugText) return;
     const raw = pick?.raw ?? {};
@@ -480,7 +446,6 @@ export class Start extends Phaser.Scene {
 
     const pick = this._pickTile(pointer);
     this.build.updateGhostAtTile(this.cfg.worldSeed, pick.tx, pick.ty);
-    this._renderBuildHover(pick.tx, pick.ty, selected, pick);
   }
 
 
