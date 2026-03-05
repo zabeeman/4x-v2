@@ -11,10 +11,21 @@ export function createViewModeController(scene, opts = {}) {
 
   const baseState = new WeakMap();
   const isoTextureCache = new Map();
+  const dynamicIsoRefreshMs = Number.isFinite(opts.dynamicIsoRefreshMs) ? Math.max(0, opts.dynamicIsoRefreshMs) : 180;
+
+  const nearIsoChunkDistance = Number.isFinite(opts.nearIsoChunkDistance) ? Math.max(0, opts.nearIsoChunkDistance) : 5;
+  const midIsoChunkDistance = Number.isFinite(opts.midIsoChunkDistance) ? Math.max(nearIsoChunkDistance, opts.midIsoChunkDistance) : 8;
+  const maxIsoChunkDistance = Number.isFinite(opts.maxIsoChunkDistance) ? Math.max(midIsoChunkDistance, opts.maxIsoChunkDistance) : 11;
+
+  const staticIsoTickMs = Number.isFinite(opts.staticIsoTickMs) ? Math.max(0, opts.staticIsoTickMs) : 200;
+  const cameraMoveEpsilon = Number.isFinite(opts.cameraMoveEpsilon) ? Math.max(0, opts.cameraMoveEpsilon) : 0.5;
 
   let mode = 'topdown';
   let originX = 0;
   let originY = 0;
+
+  let lastCameraSnapshot = null;
+  let lastStaticTick = -Infinity;
 
   function isChunkTextureKey(key) {
     return /^(chunk|wave|fog|buildarea|place|district|influence)_-?\d+_-?\d+$/.test(key);
@@ -97,15 +108,53 @@ export function createViewModeController(scene, opts = {}) {
     });
   }
 
-  function buildIsoChunkTexture(srcKey, forceRebuild = false) {
+  function getChunkDistanceToCamera(textureKey) {
+    const parsed = parseChunkKey(textureKey);
+    if (!parsed) return Infinity;
+
+    const camCenterX = camera.scrollX + camera.width * 0.5;
+    const camCenterY = camera.scrollY + camera.height * 0.5;
+    const camGX = camCenterX / tileSize;
+    const camGY = camCenterY / tileSize;
+
+    const chunkCenterGX = parsed.cx * chunkSize + chunkSize * 0.5;
+    const chunkCenterGY = parsed.cy * chunkSize + chunkSize * 0.5;
+
+    const dx = chunkCenterGX - camGX;
+    const dy = chunkCenterGY - camGY;
+    return Math.hypot(dx, dy) / chunkSize;
+  }
+
+  function getIsoQualityByDistance(textureKey) {
+    const parsed = parseChunkKey(textureKey);
+    if (!parsed) return { tier: 'near', visible: true, lodStep: 1, dynamic: true };
+
+    const dist = getChunkDistanceToCamera(textureKey);
+    if (dist > maxIsoChunkDistance) return { tier: 'hidden', visible: false, lodStep: 1, dynamic: false };
+    if (dist > midIsoChunkDistance) return { tier: 'far', visible: true, lodStep: 4, dynamic: false };
+    if (dist > nearIsoChunkDistance) return { tier: 'mid', visible: true, lodStep: 2, dynamic: false };
+    return { tier: 'near', visible: true, lodStep: 1, dynamic: true };
+  }
+
+  function buildIsoChunkTexture(srcKey, optsBuild = {}) {
+    const forceRebuild = !!optsBuild.forceRebuild;
+    const lodStep = Math.max(1, optsBuild.lodStep ?? 1);
+
     const srcTex = scene.textures.get(srcKey);
     const srcImage = srcTex?.getSourceImage?.();
     if (!srcImage) return null;
 
-    const cached = isoTextureCache.get(srcKey);
-    const isoKey = cached?.isoKey ?? `iso_${srcKey}`;
+    const cacheKey = `${srcKey}@lod${lodStep}`;
+    const cached = isoTextureCache.get(cacheKey);
+    const isoKey = cached?.isoKey ?? `iso_${cacheKey}`;
 
     if (!forceRebuild && cached && scene.textures.exists(isoKey)) return isoKey;
+
+    if (forceRebuild && cached && scene.textures.exists(isoKey)) {
+      const now = scene.time.now;
+      const elapsed = now - (cached.lastBuildAt ?? -Infinity);
+      if (elapsed < dynamicIsoRefreshMs) return isoKey;
+    }
 
     const isoW = chunkSize * tileW;
     const isoH = chunkSize * tileH;
@@ -120,26 +169,27 @@ export function createViewModeController(scene, opts = {}) {
 
     const xOffset = (chunkSize - 1) * halfW;
 
-    for (let sum = 0; sum <= (chunkSize - 1) * 2; sum++) {
-      for (let lx = 0; lx < chunkSize; lx++) {
+    for (let sum = 0; sum <= (chunkSize - 1) * 2; sum += lodStep) {
+      for (let lx = 0; lx < chunkSize; lx += lodStep) {
         const ly = sum - lx;
         if (ly < 0 || ly >= chunkSize) continue;
 
         const srcX = lx * tileSize;
         const srcY = ly * tileSize;
+        const drawSize = tileSize * lodStep;
         const tx = (lx - ly) * halfW + xOffset;
         const ty = (lx + ly) * halfH;
 
         ctx.save();
         ctx.setTransform(1, 0.5, -1, 0.5, tx, ty);
         ctx.globalAlpha = 1;
-        ctx.drawImage(srcImage, srcX, srcY, tileSize, tileSize, 0, 0, tileSize, tileSize);
+        ctx.drawImage(srcImage, srcX, srcY, drawSize, drawSize, 0, 0, drawSize, drawSize);
         ctx.restore();
       }
     }
 
     isoTex.refresh();
-    isoTextureCache.set(srcKey, { isoKey });
+    isoTextureCache.set(cacheKey, { isoKey, lastBuildAt: scene.time.now });
     return isoKey;
   }
 
@@ -155,6 +205,7 @@ export function createViewModeController(scene, opts = {}) {
   }
 
   function applyTopdown(obj, base) {
+    if (typeof obj.setVisible === 'function') obj.setVisible(true);
     if (base.textureKey && obj.texture?.key !== base.textureKey && scene.textures.exists(base.textureKey)) {
       obj.setTexture(base.textureKey);
     }
@@ -165,12 +216,26 @@ export function createViewModeController(scene, opts = {}) {
     if (typeof obj.setDepth === 'function') obj.setDepth(base.depth);
   }
 
-  function applyIsometric(obj, base) {
+  function applyIsometric(obj, base, tickStatic = false) {
     const tKey = base.textureKey ?? obj.texture?.key ?? '';
 
     if (isChunkTextureKey(tKey)) {
-      const isoKey = buildIsoChunkTexture(tKey, isDynamicChunkTextureKey(tKey));
+      const q = getIsoQualityByDistance(tKey);
+      if (typeof obj.setVisible === 'function') obj.setVisible(q.visible);
+      if (!q.visible) return;
+
+      const isDynamic = isDynamicChunkTextureKey(tKey);
+      if (!q.dynamic && isDynamic) return;
+
+      const isDirtyDynamic = isDynamic && q.dynamic;
+      if (!tickStatic && !isDirtyDynamic) return;
+
+      const isoKey = buildIsoChunkTexture(tKey, {
+        forceRebuild: isDirtyDynamic,
+        lodStep: q.lodStep,
+      });
       if (isoKey && obj.texture?.key !== isoKey) obj.setTexture(isoKey);
+
       const p = chunkWorldToView(base, tKey);
       if (typeof obj.setPosition === 'function') obj.setPosition(p.x, p.y);
       if (typeof obj.setRotation === 'function') obj.setRotation(base.rotation);
@@ -195,18 +260,18 @@ export function createViewModeController(scene, opts = {}) {
     if (typeof obj.setDepth === 'function') obj.setDepth(base.depth + (p.y * 1e-4));
   }
 
-  function applyObjectTransform(obj) {
+  function applyObjectTransform(obj, tickStatic = false) {
     if (!obj || !obj.active) return;
     remember(obj);
     const base = baseState.get(obj);
     if (!base) return;
 
-    if (mode === 'isometric') applyIsometric(obj, base);
+    if (mode === 'isometric') applyIsometric(obj, base, tickStatic);
     else applyTopdown(obj, base);
   }
 
-  function applyAll() {
-    for (const obj of scene.children.list) applyObjectTransform(obj);
+  function applyAll(tickStatic = false) {
+    for (const obj of scene.children.list) applyObjectTransform(obj, tickStatic);
   }
 
   function captureTopdownSnapshot() {
@@ -236,6 +301,22 @@ export function createViewModeController(scene, opts = {}) {
     originY = worldCY - (gx + gy) * halfH;
   }
 
+  function captureCameraSnapshot() {
+    return {
+      x: camera.scrollX,
+      y: camera.scrollY,
+      zoom: camera.zoom,
+    };
+  }
+
+  function isCameraChanged(next) {
+    if (!lastCameraSnapshot) return true;
+    const moved = Math.abs(lastCameraSnapshot.x - next.x) > cameraMoveEpsilon
+      || Math.abs(lastCameraSnapshot.y - next.y) > cameraMoveEpsilon;
+    const zoomed = Math.abs(lastCameraSnapshot.zoom - next.zoom) > 1e-5;
+    return moved || zoomed;
+  }
+
   function setMode(nextMode) {
     const normalized = nextMode === 'isometric' ? 'isometric' : 'topdown';
     if (normalized === mode) return;
@@ -243,10 +324,12 @@ export function createViewModeController(scene, opts = {}) {
     if (normalized === 'isometric') {
       captureTopdownSnapshot();
       syncOriginByCameraCenter();
+      lastCameraSnapshot = null;
+      lastStaticTick = -Infinity;
     }
 
     mode = normalized;
-    applyAll();
+    applyAll(true);
   }
 
   function update() {
@@ -257,8 +340,18 @@ export function createViewModeController(scene, opts = {}) {
       if (!baseState.has(obj)) remember(obj);
     }
 
+    const camSnap = captureCameraSnapshot();
+    const cameraChanged = isCameraChanged(camSnap);
+    const now = scene.time.now;
+    const tickStatic = cameraChanged || (now - lastStaticTick) >= staticIsoTickMs;
+
+    if (!tickStatic) return;
+
     syncOriginByCameraCenter();
-    applyAll();
+    applyAll(tickStatic);
+
+    lastCameraSnapshot = camSnap;
+    if (tickStatic) lastStaticTick = now;
   }
 
   return {

@@ -87,6 +87,13 @@ export const defaultInfiniteConfig = {
   enableSlopeShade: true,
   dryTextureMoist: 0.38,
 
+  // Isometric optimization
+  nearIsoChunkDistance: 5,     // ближнее кольцо: полный слой и динамика
+  midIsoChunkDistance: 8,      // среднее кольцо: отключаем динамические слои
+  maxIsoChunkDistance: 11,     // дальнее кольцо: укрупненный LOD, дальше — скрытие
+  dynamicIsoRefreshMs: 180,    // минимум мс между перерасчетами динамических iso-текстур
+  staticIsoTickMs: 200,        // период обновления статических изо-чанков, когда камера стоит
+
   // Water animation (shoreline waves)
   waterWaves: true,
   waveAnimFps: 5,              // частота обновления оверлея
