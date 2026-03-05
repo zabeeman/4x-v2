@@ -127,12 +127,13 @@ export class BuildManager {
       typeId: type.id,
       tx, ty,
       sprite: spr,
+      visionSourceId: `building_${placed?.id ?? `${type.id}_${tx}_${ty}`}`,
     };
     this.buildings.push(bVis);
 
-    // reveal fog around building
+    // register as persistent vision source
     const rr = type.fogRevealRadiusTiles ?? this.gameCfg.fog.buildingRevealRadiusTiles;
-    if (this.fog) this.fog.revealCircle(tx, ty, rr);
+    if (this.fog) this.fog.upsertVisionSource(bVis.visionSourceId, tx, ty, rr);
 
     return bVis;
   }
@@ -146,6 +147,7 @@ export class BuildManager {
     // remove visual
     const idx = this.buildings.findIndex(b => b.tx === tx && b.ty === ty);
     if (idx >= 0) {
+      if (this.fog) this.fog.removeVisionSource(this.buildings[idx].visionSourceId);
       this.buildings[idx].sprite.destroy();
       this.buildings.splice(idx, 1);
     }
@@ -155,7 +157,15 @@ export class BuildManager {
 
   destroy() {
     this.ghost.destroy();
-    for (const b of this.buildings) b.sprite.destroy();
+    for (const b of this.buildings) {
+      if (this.fog) this.fog.removeVisionSource(b.visionSourceId);
+      b.sprite.destroy();
+    }
     this.buildings.length = 0;
+  }
+
+  updateVisibilityByFog() {
+    if (!this.fog) return;
+    for (const b of this.buildings) b.sprite.setVisible(this.fog.isTileFullyVisible(b.tx, b.ty));
   }
 }
