@@ -53,14 +53,6 @@ export class FogOfWar {
     return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
   }
 
-  _chunkBounds(cx, cy) {
-    return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
-  }
-
-  _chunkBounds(cx, cy) {
-    return getChunkBounds(cx, cy, this.chunkTiles, this.infiniteCfg);
-  }
-
   tileToFogChunk(tx, ty) {
     return {
       cx: Math.floor(tx / this.chunkTiles),
@@ -97,7 +89,7 @@ export class FogOfWar {
 
     // fully fogged
     ctx.clearRect(0, 0, bounds.w, bounds.h);
-    ctx.fillStyle = `rgba(0,0,0,${this.alpha})`;
+    ctx.fillStyle = `rgba(0,0,0,${this.fullFogAlpha})`;
     ctx.fillRect(0, 0, bounds.w, bounds.h);
     tex.refresh();
 
@@ -106,7 +98,7 @@ export class FogOfWar {
       .setDepth(this.gameCfg.fog.depth ?? 900);
 
     const c = { cx, cy, texKey, tex, img, data, bounds };
-    this.chunks.set(k, c);
+    this.renderChunks.set(k, c);
     return c;
   }
 
@@ -185,21 +177,23 @@ export class FogOfWar {
     ctx.imageSmoothingEnabled = false;
 
     // full fog
-    ctx.clearRect(0, 0, c.bounds.w, c.bounds.h);
-    ctx.fillStyle = `rgba(0,0,0,${this.alpha})`;
-    ctx.fillRect(0, 0, c.bounds.w, c.bounds.h);
+    ctx.clearRect(0, 0, rc.bounds.w, rc.bounds.h);
+    ctx.fillStyle = `rgba(0,0,0,${this.fullFogAlpha})`;
+    ctx.fillRect(0, 0, rc.bounds.w, rc.bounds.h);
 
     ctx.globalCompositeOperation = "destination-out";
     for (let ly = 0; ly < this.chunkTiles; ly++) {
       for (let lx = 0; lx < this.chunkTiles; lx++) {
-        if (c.data[ly * this.chunkTiles + lx] === 1) {
+        const idx = ly * this.chunkTiles + lx;
+        const { byte, mask } = bitAddr(idx);
+        if ((state.fullBits[byte] & mask) !== 0) {
           if (!this.infiniteCfg.isoMode) {
             ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
           } else {
-            const gx = c.cx * this.chunkTiles + lx;
-            const gy = c.cy * this.chunkTiles + ly;
+            const gx = cx * this.chunkTiles + lx;
+            const gy = cy * this.chunkTiles + ly;
             const poly = tileDiamond(gx, gy, this.infiniteCfg);
-            drawTilePath(ctx, poly, c.bounds.x, c.bounds.y);
+            drawTilePath(ctx, poly, rc.bounds.x, rc.bounds.y);
             ctx.fill();
           }
         }
@@ -214,7 +208,7 @@ export class FogOfWar {
     const v = this.cam.worldView;
     const margin = this.infiniteCfg.marginChunks ?? 2;
 
-    const { minCX, maxCX, minCY, maxCY } = worldViewToChunkRange(v, this.infiniteCfg, this.chunkTiles, marginChunks);
+    const { minCX, maxCX, minCY, maxCY } = worldViewToChunkRange(v, this.infiniteCfg, this.chunkTiles, margin);
 
     for (let cy = minCY; cy <= maxCY; cy++) {
       for (let cx = minCX; cx <= maxCX; cx++) this._ensureRenderChunk(cx, cy);
