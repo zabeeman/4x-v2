@@ -16,6 +16,7 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
 import { createViewModeController } from "../world/render/viewModeController.js";
+import { createTilePickerTopDown, createTilePickerIso } from "../world/render/tilePickers.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -39,6 +40,14 @@ function parseIntQ(name, def) {
   if (!v) return def;
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : def;
+}
+
+
+function parseBoolQ(name, def = false) {
+  const qs = new URLSearchParams(window.location.search);
+  const v = qs.get(name);
+  if (v == null) return def;
+  return v === "1" || v === "true" || v === "yes";
 }
 
 
@@ -143,6 +152,15 @@ export class Start extends Phaser.Scene {
     });
     this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
 
+    this.topDownPicker = createTilePickerTopDown({ tileSize: this.cfg.tileSize });
+    this.isoPicker = createTilePickerIso({ tileSize: this.cfg.tileSize, tileW: this.cfg.tileSize * 2, tileH: this.cfg.tileSize });
+
+    this.debugTilePick = parseBoolQ('debugTilePick', false);
+    this.tilePickDebugText = this.add.text(12, 12, '', { fontSize: '12px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.55)', padding: { x: 6, y: 4 } })
+      .setDepth(5000)
+      .setScrollFactor(0)
+      .setVisible(this.debugTilePick);
+
     // Build palette
     const catalogue = this.sim.getCatalogue();
     this.ui.buildButtonsFromCatalogue(catalogue, (id) => {
@@ -235,6 +253,7 @@ export class Start extends Phaser.Scene {
     this.ui.setViewModeHandler(() => {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
+      this._refreshGhostUnderPointer();
     });
     this.ui.setViewMode(this.viewModeCtl.getMode());
 
@@ -259,11 +278,9 @@ export class Start extends Phaser.Scene {
     // Pointer interactions
     this.input.on("pointermove", (pointer) => {
       if (this.ui.isPointerOverUI(pointer)) return;
-      const pCam = pointer.positionToCamera(this.cameras.main);
-      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
-      const tilePos = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
-      const tx = tilePos.tx;
-      const ty = tilePos.ty;
+      const pick = this._pickTile(pointer);
+      const tx = pick.tx;
+      const ty = pick.ty;
 
       if (this.routeMode.active) {
         const c = this.sim.findCityHubAt(tx, ty, 2);
@@ -272,9 +289,7 @@ export class Start extends Phaser.Scene {
         return;
       }
 
-      const vc = this.viewModeCtl.tileToView(tx, ty);
-      const worldGhost = this.viewModeCtl.viewToWorld(vc.x, vc.y);
-      this.build.updateGhost(this.cfg.worldSeed, worldGhost.x, worldGhost.y);
+      this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
       const selected = this.build.getSelectedBuildType();
       if (selected) {
         const placement = this.build.isValidBuildTile(this.cfg.worldSeed, tx, ty);
@@ -286,16 +301,17 @@ export class Start extends Phaser.Scene {
       } else {
         this.ui.setPlacementStatus({ ok: false, affordabilityOk: true, reasonsText: 'Выберите здание.' });
       }
+
+      this._renderPickDebug(pointer, pick);
     });
 
     this.input.on("pointerdown", (pointer) => {
       if (!pointer.leftButtonDown()) return;
       if (this.ui.isPointerOverUI(pointer)) return;
 
-      const pCam = pointer.positionToCamera(this.cameras.main);
-      const tilePos = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
-      const tx = tilePos.tx;
-      const ty = tilePos.ty;
+      const pick = this._pickTile(pointer);
+      const tx = pick.tx;
+      const ty = pick.ty;
 
       // Route mode has priority
       if (this.routeMode.active) {
@@ -331,6 +347,7 @@ export class Start extends Phaser.Scene {
 
       // Build placement
       if (this.build.getSelectedBuildType()) {
+        this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
         const b = this.build.tryPlaceSelected(this.cfg.worldSeed);
         if (b) {
           const def = this.sim.getBuildingDef(b.typeId);
@@ -379,6 +396,7 @@ export class Start extends Phaser.Scene {
     this.input.keyboard.on("keydown-V", () => {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
+      this._refreshGhostUnderPointer();
     });
 
     this.input.keyboard.on("keydown-C", (ev) => {
@@ -388,6 +406,48 @@ export class Start extends Phaser.Scene {
       }
     });
   }
+
+  _getActivePicker() {
+    return this.viewModeCtl.getMode() === 'isometric' ? this.isoPicker : this.topDownPicker;
+  }
+
+  _pickTile(pointer) {
+    const picker = this._getActivePicker();
+    const result = picker.pick(pointer, this.cameras.main) ?? {};
+    return {
+      tx: result.gx,
+      ty: result.gy,
+      raw: result,
+    };
+  }
+
+  _renderPickDebug(pointer, pick) {
+    if (!this.debugTilePick || !this.tilePickDebugText) return;
+    const raw = pick?.raw ?? {};
+    const mode = this.viewModeCtl.getMode();
+    const lines = [
+      `mode: ${mode}`,
+      `screen: ${Math.round(pointer.x)}, ${Math.round(pointer.y)}`,
+      `world: ${(raw.worldX ?? 0).toFixed(2)}, ${(raw.worldY ?? 0).toFixed(2)}`,
+      `gridFloat: ${(raw.gxFloat ?? 0).toFixed(3)}, ${(raw.gyFloat ?? 0).toFixed(3)}`,
+      `grid: ${pick.tx}, ${pick.ty}`,
+    ];
+    if (mode === 'isometric') lines.push(`diamond n: ${(raw.nx ?? 0).toFixed(3)}, ${(raw.ny ?? 0).toFixed(3)}`);
+    this.tilePickDebugText.setText(lines.join('\n'));
+
+  }
+
+  _refreshGhostUnderPointer() {
+    const selected = this.build.getSelectedBuildType();
+    if (!selected) return;
+
+    const pointer = this.input?.activePointer;
+    if (!pointer) return;
+
+    const pick = this._pickTile(pointer);
+    this.build.updateGhostAtTile(this.cfg.worldSeed, pick.tx, pick.ty);
+  }
+
 
   _startRouteMode(mode) {
     this.routeMode.active = true;
@@ -479,6 +539,7 @@ export class Start extends Phaser.Scene {
     this.viewModeCtl?.update();
     this.chunkMgr.update();
     this.viewModeCtl?.update();
+    this._refreshGhostUnderPointer();
     this.fog.update();
     this.build.updateVisibilityByFog();
     this.units.updateVisibilityByFog();

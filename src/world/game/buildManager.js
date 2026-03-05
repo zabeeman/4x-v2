@@ -50,6 +50,16 @@ export class BuildManager {
     return this.getCatalogue().find(b => b.id === this.selectedBuildTypeId) ?? null;
   }
 
+  setGhostVisible(visible) {
+    this.ghost.setVisible(!!visible && !!this.selectedBuildTypeId);
+  }
+
+  getGhostStyle() {
+    if (!this._valid) return { fillColor: 0xef476f, lineColor: 0xef476f, fillAlpha: 0.22, lineAlpha: 0.55 };
+    if (!this._afford) return { fillColor: 0xffcc00, lineColor: 0xffcc00, fillAlpha: 0.22, lineAlpha: 0.55 };
+    return { fillColor: 0x06d6a0, lineColor: 0x06d6a0, fillAlpha: 0.22, lineAlpha: 0.55 };
+  }
+
   isValidBuildTile(seed, tx, ty) {
     const def = this.getSelectedBuildType();
     if (!def || !this.sim?.validatePlacement) {
@@ -64,6 +74,10 @@ export class BuildManager {
   updateGhost(seed, worldX, worldY) {
     const tx = Math.floor(worldX / this.tileSize);
     const ty = Math.floor(worldY / this.tileSize);
+    this.updateGhostAtTile(seed, tx, ty);
+  }
+
+  updateGhostAtTile(seed, tx, ty) {
 
     const type = this.getSelectedBuildType();
     if (!type) { this.ghost.setVisible(false); return; }
