@@ -5,6 +5,7 @@ import { defaultInfiniteConfig } from '../src/world/infinite/infiniteConfig.js';
 import { gridToScreen, screenToGrid, snapGrid } from '../src/world/render/isoProjector.js';
 import { validatePlacement } from '../src/world/game/sim/placementValidator.js';
 import { getChunkBounds, worldViewToChunkRange } from '../src/world/render/renderSpace.js';
+import { createViewModeController } from '../src/world/render/viewModeController.js';
 
 const cfg = { ...defaultInfiniteConfig, isoMode: true, isoTileW: 16, isoTileH: 8 };
 
@@ -88,4 +89,43 @@ test('renderSpace world view to chunk range returns valid order in iso', () => {
   const range = worldViewToChunkRange({ x: -300, y: -200, width: 800, height: 600 }, cfg, 64, 1);
   assert.ok(range.minCX <= range.maxCX);
   assert.ok(range.minCY <= range.maxCY);
+});
+
+
+test('viewModeController toggles projection and refreshes visual modules', () => {
+  const cfg = { ...defaultInfiniteConfig, isoMode: false };
+  const calls = [];
+  const mk = (name, fn = null) => ({
+    refreshProjection: () => calls.push(`${name}:refresh`),
+    invalidate: () => calls.push(`${name}:invalidate`),
+    setFocus: fn ?? (() => {}),
+    centerOn: fn ?? (() => {}),
+  });
+
+  const camera = { centerOn: (x, y) => calls.push(`camera:center:${x.toFixed(2)},${y.toFixed(2)}`) };
+  const cameraCtl = { setFocus: (x, y) => calls.push(`cameraCtl:focus:${x.toFixed(2)},${y.toFixed(2)}`) };
+
+  const ctl = createViewModeController(cfg, {
+    chunkMgr: mk('chunk'),
+    fog: mk('fog'),
+    overlays: mk('overlay'),
+    build: mk('build'),
+    units: mk('units'),
+    routeRenderer: mk('route'),
+    camera,
+    cameraCtl,
+  });
+
+  const changed = ctl.toggle({ anchorTile: { tx: 10, ty: 4 } });
+  assert.equal(changed, true);
+  assert.equal(cfg.isoMode, true);
+  assert.equal(ctl.getMode(), 'iso');
+  assert.ok(calls.includes('chunk:refresh'));
+  assert.ok(calls.includes('fog:refresh'));
+  assert.ok(calls.includes('overlay:refresh'));
+  assert.ok(calls.includes('build:refresh'));
+  assert.ok(calls.includes('units:refresh'));
+  assert.ok(calls.includes('route:invalidate'));
+  assert.ok(calls.some((c) => c.startsWith('camera:center:')));
+  assert.ok(calls.some((c) => c.startsWith('cameraCtl:focus:')));
 });

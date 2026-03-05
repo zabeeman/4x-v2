@@ -158,6 +158,21 @@ export class BuildManager {
     return res;
   }
 
+  refreshProjection() {
+    this.iso = resolveIsoConfig(this.infiniteCfg);
+    for (const b of this.buildings) {
+      const pos = this._tileCenter(b.tx, b.ty);
+      b.sprite.setPosition(pos.x, pos.y);
+      const w = this.infiniteCfg.isoMode ? this.iso.tileW * 0.55 : this.tileSize * 0.92;
+      const h = this.infiniteCfg.isoMode ? this.iso.tileH * 1.4 : this.tileSize * 0.92;
+      b.sprite.setSize(w, h);
+      b.sprite.setDisplaySize(w, h);
+      b.sprite.setOrigin(0.5, this.infiniteCfg.isoMode ? 1 : 0.5);
+      b.sprite.setDepth(Math.floor(pos.y) + 1100);
+    }
+    this.ghost.clear();
+  }
+
   destroy() {
     this.ghost.destroy();
     for (const b of this.buildings) {

@@ -221,6 +221,19 @@ export function createChunkManager(scene, cfg, palette) {
     pruneCache();
   }
 
+  function clearAllChunks() {
+    for (const c of chunks.values()) destroyChunkAssets(c);
+    chunks.clear();
+
+    for (const c of cachedChunks.values()) destroyChunkAssets(c);
+    cachedChunks.clear();
+
+    queued.clear();
+    queue.length = 0;
+    queueHead = 0;
+    lastViewChunkBounds = null;
+  }
+
   function sameChunkBounds(a, b) {
     return !!a && !!b
       && a.minCX === b.minCX
@@ -289,6 +302,9 @@ export function createChunkManager(scene, cfg, palette) {
       const g = screenToGrid(wx, wy, cfg);
       const s = snapGrid(g.gx, g.gy);
       return { tx: s.ix, ty: s.iy };
+    },
+    refreshProjection() {
+      clearAllChunks();
     },
   };
 

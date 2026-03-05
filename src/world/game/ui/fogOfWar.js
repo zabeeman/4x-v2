@@ -289,6 +289,10 @@ export class FogOfWar {
     this.simRevision = -1;
   }
 
+  refreshProjection() {
+    this.reset();
+  }
+
   destroy() {
     this.reset();
   }

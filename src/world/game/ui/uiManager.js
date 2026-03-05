@@ -74,6 +74,7 @@ export class UIManager {
 
     // placement hint overlay
     this.chkPlacement = null;
+    this.viewModeBtn = null;
   }
 
   create() {
@@ -252,6 +253,9 @@ export class UIManager {
     const row = el('div', 'ui-row', this.buildScreenWrap);
     this.recoBtn = el('button', 'ui-btn', row);
     this.recoBtn.textContent = 'Рекомендовать по доктринам';
+
+    this.viewModeBtn = el('button', 'ui-btn', row);
+    this.viewModeBtn.textContent = 'Вид: top-down';
 
     // Overlays
     const ovTitle = el('div', 'ui-mini', this.buildScreenWrap);
@@ -541,6 +545,16 @@ export class UIManager {
   setRecommendHandler(fn) {
     if (!this.recoBtn) return;
     this.recoBtn.onclick = fn;
+  }
+
+  setViewModeToggleHandler(fn) {
+    if (!this.viewModeBtn) return;
+    this.viewModeBtn.onclick = () => fn?.();
+  }
+
+  setViewMode(mode) {
+    if (!this.viewModeBtn) return;
+    this.viewModeBtn.textContent = `Вид: ${mode === 'iso' ? 'изометрия' : 'top-down'}`;
   }
 
   setOverlayToggleHandler(fn) {

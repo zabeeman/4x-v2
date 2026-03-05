@@ -19,6 +19,11 @@ export class RouteRenderer {
     this.g.destroy();
   }
 
+  invalidate() {
+    this._lastSig = { routeCount: -1, pathPoints: -1, src: null, hover: null };
+    this.g.clear();
+  }
+
   _tileToWorld(tx, ty) {
     return tileToWorldCenter(tx, ty, this.cfg);
   }

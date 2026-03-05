@@ -16,6 +16,7 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
+import { createViewModeController } from "../world/render/viewModeController.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -143,6 +144,24 @@ export class Start extends Phaser.Scene {
     // UI
     this.ui = new UIManager(this, this.cfg, this.gcfg);
     this.ui.create();
+
+    this.viewMode = createViewModeController(this.cfg, {
+      chunkMgr: this.chunkMgr,
+      fog: this.fog,
+      overlays: this.overlays,
+      build: this.build,
+      units: this.units,
+      routeRenderer: this.routeRenderer,
+      cameraCtl: this.cameraCtl,
+      camera: this.cameras.main,
+    });
+    this.ui.setViewMode(this.viewMode.getMode());
+    this.ui.setViewModeToggleHandler(() => {
+      const anchor = this.units.getSelectedUnit() ?? this.spawn ?? null;
+      const anchorTile = anchor ? { tx: anchor.tx ?? anchor.x, ty: anchor.ty ?? anchor.y } : null;
+      const changed = this.viewMode.toggle({ anchorTile });
+      if (changed) this.ui.setViewMode(this.viewMode.getMode());
+    });
 
     // Build palette
     const catalogue = this.sim.getCatalogue();
@@ -362,6 +381,14 @@ export class Start extends Phaser.Scene {
       this.build.setSelectedBuildType(null);
       this.ui.setSelectedBuilding(null);
       this.overlays.setPlacementType(null);
+    });
+
+
+    this.input.keyboard.on("keydown-V", () => {
+      const anchor = this.units.getSelectedUnit() ?? this.spawn ?? null;
+      const anchorTile = anchor ? { tx: anchor.tx ?? anchor.x, ty: anchor.ty ?? anchor.y } : null;
+      const changed = this.viewMode.toggle({ anchorTile });
+      if (changed) this.ui.setViewMode(this.viewMode.getMode());
     });
 
     this.input.keyboard.on("keydown-C", (ev) => {
