@@ -1,3 +1,5 @@
+import { tileToWorldCenter } from "../../render/renderSpace.js";
+
 // src/world/game/overlay/routeRenderer.js
 // Draws trade routes as polylines in world space.
 
@@ -18,7 +20,7 @@ export class RouteRenderer {
   }
 
   _tileToWorld(tx, ty) {
-    return { x: (tx + 0.5) * this.tileSize, y: (ty + 0.5) * this.tileSize };
+    return tileToWorldCenter(tx, ty, this.cfg);
   }
 
   render(routes, cities, selection = null) {
