@@ -140,11 +140,6 @@ export class Start extends Phaser.Scene {
       isoYScale: 0.5,
       tileSize: this.cfg.tileSize,
       chunkSize: this.cfg.chunkSize,
-      nearIsoChunkDistance: this.cfg.nearIsoChunkDistance,
-      midIsoChunkDistance: this.cfg.midIsoChunkDistance,
-      maxIsoChunkDistance: this.cfg.maxIsoChunkDistance,
-      dynamicIsoRefreshMs: this.cfg.dynamicIsoRefreshMs,
-      staticIsoTickMs: this.cfg.staticIsoTickMs,
     });
     this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
 
