@@ -18,6 +18,7 @@ import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
 import { createViewModeController } from "../world/render/viewModeController.js";
 import { ChunkCacheService } from "../world/cache/ChunkCacheService.js";
 import { WorldStreamer } from "../world/stream/WorldStreamer.js";
+import { IsoInputController } from "../input/IsoInputController.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -112,8 +113,9 @@ export class Start extends Phaser.Scene {
     this.cameras.main.scrollY = -300;
 
     // Terrain
-    this.chunkMgr = createChunkManager(this, this.cfg, terrainPalette);
     this.chunkGenVersion = 1;
+    this.cfg.chunkGenVersion = this.chunkGenVersion;
+    this.chunkMgr = createChunkManager(this, this.cfg, terrainPalette);
     this.chunkCache = new ChunkCacheService({ maxWorkers: 2, ramLimit: 96 });
     this.worldStreamer = new WorldStreamer({ cacheService: this.chunkCache, radiusChunks: 2, prefetchConcurrency: 2 });
     this._streamTickAccumMs = 0;
@@ -165,6 +167,14 @@ export class Start extends Phaser.Scene {
       .setDepth(5000)
       .setScrollFactor(0)
       .setVisible(this.debugTilePick);
+
+    this.hoverHighlight = this.add.rectangle(0, 0, this.cfg.tileSize * 0.92, this.cfg.tileSize * 0.92, 0x4cc9f0, 0.14)
+      .setStrokeStyle(2, 0x4cc9f0, 0.5)
+      .setDepth(1490)
+      .setVisible(false);
+    this.hoverHighlight.setDataEnabled();
+    this.hoverHighlight.setData("isoTileDiamond", true);
+    this._lastPick = null;
 
     // Build palette
     const catalogue = this.sim.getCatalogue();
@@ -259,6 +269,7 @@ export class Start extends Phaser.Scene {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
       this._refreshGhostUnderPointer();
+      if (this._lastPick) this._updateHoverHighlight(this._lastPick.tx, this._lastPick.ty, true);
     });
     this.ui.setViewMode(this.viewModeCtl.getMode());
 
@@ -280,87 +291,14 @@ export class Start extends Phaser.Scene {
     // Spawn + initial state
     this._spawnAndInit();
 
-    // Pointer interactions
-    this.input.on("pointermove", (pointer) => {
-      if (this.ui.isPointerOverUI(pointer)) return;
-      const pick = this._pickTile(pointer);
-      const tx = pick.tx;
-      const ty = pick.ty;
-
-      if (this.routeMode.active) {
-        const c = this.sim.findCityHubAt(tx, ty, 2);
-        const nextHover = c?.id ?? null;
-        if (nextHover !== this.routeMode.hoverCityId) this.routeMode.hoverCityId = nextHover;
-        return;
-      }
-
-      this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
-      const selected = this.build.getSelectedBuildType();
-      if (selected) {
-        const placement = this.build.isValidBuildTile(this.cfg.worldSeed, tx, ty);
-        this.ui.setPlacementStatus({
-          ok: placement?.ok,
-          affordabilityOk: placement?.affordabilityOk,
-          reasons: placement?.reasons ?? [],
-        });
-      } else {
-        this.ui.setPlacementStatus({ ok: false, affordabilityOk: true, reasonsText: 'Выберите здание.' });
-      }
-
-      this._renderPickDebug(pointer, pick);
-    });
-
-    this.input.on("pointerdown", (pointer) => {
-      if (!pointer.leftButtonDown()) return;
-      if (this.ui.isPointerOverUI(pointer)) return;
-
-      const pick = this._pickTile(pointer);
-      const tx = pick.tx;
-      const ty = pick.ty;
-
-      // Route mode has priority
-      if (this.routeMode.active) {
-        const c = this.sim.findCityHubAt(tx, ty, 2);
-        if (!c) return;
-
-        if (!this.routeMode.srcCityId) {
-          this.routeMode.srcCityId = c.id;
-          this.ui.setTradeStatus(`Источник выбран. Теперь выбери цель (${this.routeMode.mode === 'water' ? 'по воде' : 'по земле'}).`);
-        } else {
-          if (c.id === this.routeMode.srcCityId) return;
-          const res = this.sim.createManualTradeRoute(this.routeMode.srcCityId, c.id, this.routeMode.mode);
-          if (res.ok) {
-            this.ui.setTradeStatus(`Маршрут создан (${this.routeMode.mode}).`);
-          } else {
-            const msg = res.reason === 'no_port' ? 'Нет порта рядом с одним из хабов.' : `Не удалось: ${res.reason}`;
-            this.ui.setTradeStatus(msg);
-          }
-          this._cancelRouteMode(false);
-        }
-        return;
-      }
-
-      // Demolish mode has priority over build placement
-      if (this.demolishMode) {
-        const res = this.build.tryDemolishAtTile(tx, ty);
-        if (res.ok) {
-          this.ui.setTradeStatus('');
-          this._rebuildButtonsGate();
-        }
-        return;
-      }
-
-      // Build placement
-      if (this.build.getSelectedBuildType()) {
-        this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
-        const b = this.build.tryPlaceSelected(this.cfg.worldSeed);
-        if (b) {
-          const def = this.sim.getBuildingDef(b.typeId);
-          if (def?.isStarter) addSpawnToRegistry(this.spawn);
-          this._rebuildButtonsGate();
-        }
-        return;
-      }
+    // Pointer interactions (single scene-level handler, O(1) math tile pick)
+    this.isoInput = new IsoInputController(this, {
+      viewModeCtl: this.viewModeCtl,
+      tileSize: this.cfg.tileSize,
+      tileW: this.viewModeCtl.tileW,
+      tileH: this.viewModeCtl.tileH,
+      onTileHover: (tx, ty, pointer, pick) => this._onTileHover(tx, ty, pointer, pick),
+      onTileClick: (tx, ty, pointer, pick) => this._onTileClick(tx, ty, pointer, pick),
     });
 
     // Hotkeys
@@ -410,22 +348,95 @@ export class Start extends Phaser.Scene {
         if (this.sim.state.cities.length === 0) this._spawnAndInit(true);
       }
     });
+
+    this.events.once('shutdown', () => {
+      this.isoInput?.destroy();
+      this.isoInput = null;
+      this.input?.keyboard?.removeAllListeners();
+    });
   }
 
-  _pickTile(pointer) {
-    const world = this.viewModeCtl.screenToWorld(pointer.x, pointer.y);
-    const tile = this.viewModeCtl.worldToTile(world.x, world.y);
+  _onTileHover(tx, ty, pointer, pick) {
+    if (this.ui.isPointerOverUI(pointer)) return;
 
-    return {
-      tx: tile.tx,
-      ty: tile.ty,
-      raw: {
-        worldX: world.x,
-        worldY: world.y,
-        gxFloat: world.x / this.cfg.tileSize,
-        gyFloat: world.y / this.cfg.tileSize,
-      },
-    };
+    this._lastPick = { tx, ty, raw: pick };
+    this._updateHoverHighlight(tx, ty, true);
+
+    if (this.routeMode.active) {
+      const c = this.sim.findCityHubAt(tx, ty, 2);
+      const nextHover = c?.id ?? null;
+      if (nextHover !== this.routeMode.hoverCityId) this.routeMode.hoverCityId = nextHover;
+      this._renderPickDebug(pointer, this._lastPick);
+      return;
+    }
+
+    this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
+    const selected = this.build.getSelectedBuildType();
+    if (selected) {
+      const placement = this.build.isValidBuildTile(this.cfg.worldSeed, tx, ty);
+      this.ui.setPlacementStatus({
+        ok: placement?.ok,
+        affordabilityOk: placement?.affordabilityOk,
+        reasons: placement?.reasons ?? [],
+      });
+    } else {
+      this.ui.setPlacementStatus({ ok: false, affordabilityOk: true, reasonsText: 'Выберите здание.' });
+    }
+
+    this._renderPickDebug(pointer, this._lastPick);
+  }
+
+  _onTileClick(tx, ty, pointer, pick) {
+    if (!pointer.leftButtonDown()) return;
+    if (this.ui.isPointerOverUI(pointer)) return;
+
+    this._lastPick = { tx, ty, raw: pick };
+
+    if (this.routeMode.active) {
+      const c = this.sim.findCityHubAt(tx, ty, 2);
+      if (!c) return;
+
+      if (!this.routeMode.srcCityId) {
+        this.routeMode.srcCityId = c.id;
+        this.ui.setTradeStatus(`Источник выбран. Теперь выбери цель (${this.routeMode.mode === 'water' ? 'по воде' : 'по земле'}).`);
+      } else {
+        if (c.id === this.routeMode.srcCityId) return;
+        const res = this.sim.createManualTradeRoute(this.routeMode.srcCityId, c.id, this.routeMode.mode);
+        if (res.ok) this.ui.setTradeStatus(`Маршрут создан (${this.routeMode.mode}).`);
+        else this.ui.setTradeStatus(res.reason === 'no_port' ? 'Нет порта рядом с одним из хабов.' : `Не удалось: ${res.reason}`);
+        this._cancelRouteMode(false);
+      }
+      return;
+    }
+
+    if (this.demolishMode) {
+      const res = this.build.tryDemolishAtTile(tx, ty);
+      if (res.ok) {
+        this.ui.setTradeStatus('');
+        this._rebuildButtonsGate();
+      }
+      return;
+    }
+
+    if (this.build.getSelectedBuildType()) {
+      this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
+      const b = this.build.tryPlaceSelected(this.cfg.worldSeed);
+      if (b) {
+        const def = this.sim.getBuildingDef(b.typeId);
+        if (def?.isStarter) addSpawnToRegistry(this.spawn);
+        this._rebuildButtonsGate();
+      }
+    }
+  }
+
+  _updateHoverHighlight(tx, ty, visible) {
+    if (!this.hoverHighlight) return;
+    if (!visible) {
+      this.hoverHighlight.setVisible(false);
+      return;
+    }
+    const anchor = this.viewModeCtl.tileToWorldAnchor(tx, ty);
+    this.hoverHighlight.setPosition(anchor.wx, anchor.wy).setVisible(true);
   }
 
   _renderPickDebug(pointer, pick) {
@@ -447,11 +458,8 @@ export class Start extends Phaser.Scene {
     const selected = this.build.getSelectedBuildType();
     if (!selected) return;
 
-    const pointer = this.input?.activePointer;
-    if (!pointer) return;
-
-    const pick = this._pickTile(pointer);
-    this.build.updateGhostAtTile(this.cfg.worldSeed, pick.tx, pick.ty);
+    if (!this._lastPick) return;
+    this.build.updateGhostAtTile(this.cfg.worldSeed, this._lastPick.tx, this._lastPick.ty);
   }
 
 
@@ -553,8 +561,7 @@ export class Start extends Phaser.Scene {
     this.viewModeCtl?.update();
     this.chunkMgr.update();
     this.viewModeCtl?.update();
-    this._refreshGhostUnderPointer();
-    this.fog.setAggressiveIsoOptimization(this.viewModeCtl?.getMode?.() === 'isometric');
+    this.fog.setAggressiveIsoOptimization(false);
     this.fog.update();
     this.build.updateVisibilityByFog();
     this.units.updateVisibilityByFog();

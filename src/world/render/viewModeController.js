@@ -1,4 +1,5 @@
 import { createCoordinateService } from './coordinateService.js';
+import { ChunkTextureLRU } from '../../render/ChunkTextureLRU.js';
 
 export function createViewModeController(scene, opts = {}) {
   const camera = scene.cameras.main;
@@ -15,6 +16,7 @@ export function createViewModeController(scene, opts = {}) {
 
   const baseState = new WeakMap();
   const isoTextureCache = new Map();
+  const isoTextureLRU = new ChunkTextureLRU(scene, { limit: Math.max(256, (opts.isoTextureLimit ?? 256)) });
 
   let mode = 'topdown';
   let originX = 0;
@@ -144,6 +146,7 @@ export function createViewModeController(scene, opts = {}) {
 
     isoTex.refresh();
     isoTextureCache.set(srcKey, { isoKey });
+    isoTextureLRU.touch(isoKey, { textureKey: isoKey });
     return isoKey;
   }
 
@@ -276,6 +279,10 @@ export function createViewModeController(scene, opts = {}) {
     originY = worldCY - (gx + gy) * halfH;
   }
 
+  function getIsoOrigin() {
+    return { x: originX, y: originY };
+  }
+
   function setMode(nextMode) {
     const normalized = nextMode === 'isometric' ? 'isometric' : 'topdown';
     if (normalized === mode) return;
@@ -301,6 +308,10 @@ export function createViewModeController(scene, opts = {}) {
     applyAll();
   }
 
+  scene.events.once('shutdown', () => {
+    isoTextureLRU.clear();
+  });
+
   return {
     setMode,
     toggleMode() {
@@ -319,6 +330,9 @@ export function createViewModeController(scene, opts = {}) {
     worldToTile: coords.worldToTile,
     tileToWorldAnchor: coords.tileToWorldAnchor,
     tileToIsoScreen: coords.tileToIsoScreen,
+    getIsoOrigin,
+    tileW,
+    tileH,
     update,
   };
 }
