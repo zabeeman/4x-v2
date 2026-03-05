@@ -1,4 +1,5 @@
 // src/world/game/buildSystem.js
+// Legacy module: runtime placement now goes through BuildManager + GameSim.
 import { sampleHM } from "../infinite/terrainSampler.js";
 
 function dist2(ax, ay, bx, by) {
