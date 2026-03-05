@@ -25,6 +25,15 @@ export function createFreeCameraController(scene, opts = {}) {
   };
 
   const cam = scene.cameras.main;
+  const keyboard = scene.input.keyboard;
+  const keys = keyboard
+    ? keyboard.addKeys({
+        up: Phaser.Input.Keyboard.KeyCodes.W,
+        down: Phaser.Input.Keyboard.KeyCodes.S,
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+      })
+    : null;
 
   if (scene.input.mouse) scene.input.mouse.disableContextMenu();
 
@@ -147,8 +156,28 @@ export function createFreeCameraController(scene, opts = {}) {
 
   return {
     update() {
-      // Keyboard panning is intentionally NOT implemented here now.
-      // Use drag (right/middle) for panning, as typical for strategy camera.
+      if (!keys) return;
+
+      const ae = document.activeElement;
+      const typingInUi =
+        !!ae &&
+        (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
+      if (typingInUi) return;
+
+      let mx = 0;
+      let my = 0;
+
+      if (keys.left.isDown) mx -= 1;
+      if (keys.right.isDown) mx += 1;
+      if (keys.up.isDown) my -= 1;
+      if (keys.down.isDown) my += 1;
+
+      if (mx === 0 && my === 0) return;
+
+      const len = Math.hypot(mx, my) || 1;
+      const speed = cfg.panSpeed / cam.zoom;
+      cam.scrollX += (mx / len) * speed;
+      cam.scrollY += (my / len) * speed;
     },
     setFocus,
     clearFocus,
