@@ -166,7 +166,12 @@ export function createChunkManager(scene, cfg, palette) {
         const px = t.lx * tileSize;
         const py = t.ly * tileSize;
         ctx.fillStyle = color;
-        ctx.fillRect(px, py, tileSize, tileSize);
+        if (cfg.isoMode) {
+          drawTilePath(ctx, { a: p0, b: p1, c: p2, d: p3 }, bounds.x, bounds.y);
+          ctx.fill();
+        } else {
+          ctx.fillRect(px, py, tileSize, tileSize);
+        }
 
         if (useTextures && texBank) {
           const kind = surfaceToKind(s.surface, s.moist);
@@ -215,20 +220,32 @@ export function createChunkManager(scene, cfg, palette) {
     pruneCache();
   }
 
+  function sameChunkBounds(a, b) {
+    return !!a && !!b
+      && a.minCX === b.minCX
+      && a.maxCX === b.maxCX
+      && a.minCY === b.minCY
+      && a.maxCY === b.maxCY;
+  }
+
   function updateNeededChunks() {
     const v = cam.worldView;
     const { minCX, maxCX, minCY, maxCY } = worldViewToChunkRange(v, cfg, chunkSize, cfg.marginChunks);
 
-    for (let cy = minCY; cy <= maxCY; cy++) {
-      for (let cx = minCX; cx <= maxCX; cx++) {
-        if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
+    if (boundsChanged) {
+      for (let cy = minCY; cy <= maxCY; cy++) {
+        for (let cx = minCX; cx <= maxCX; cx++) {
+          if (!restoreChunkFromCache(cx, cy)) enqueue(cx, cy);
+        }
       }
-    }
 
-    for (const c of chunks.values()) {
-      if (c.cx < minCX || c.cx > maxCX || c.cy < minCY || c.cy > maxCY) {
-        unloadChunk(c.cx, c.cy);
+      for (const c of chunks.values()) {
+        if (c.cx < minCX || c.cx > maxCX || c.cy < minCY || c.cy > maxCY) {
+          unloadChunk(c.cx, c.cy);
+        }
       }
+
+      lastViewChunkBounds = currentBounds;
     }
   }
 
@@ -274,3 +291,4 @@ export function createChunkManager(scene, cfg, palette) {
 
   return publicApi;
 }
+

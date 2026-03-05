@@ -56,6 +56,9 @@ export class BuildManager {
     if (!def || !this.sim?.validatePlacement) {
       return { ok: false, affordabilityOk: true, reasons: [{ code: 'NO_SIM' }], cityId: null, footprint: [{ tx, ty }] };
     }
+    if (this.sim?.placementCache && !this.sim.placementCache.canPlaceAt(def.id, tx, ty)) {
+      return { ok: false, affordabilityOk: true, reasons: [{ code: 'CACHE_PRECHECK_FAILED' }], cityId: null, footprint: [{ tx, ty }] };
+    }
     return this.sim.validatePlacement(def.id, tx, ty);
   }
 
@@ -148,6 +151,7 @@ export class BuildManager {
     if (!res.ok) return res;
     const idx = this.buildings.findIndex(b => b.tx === tx && b.ty === ty);
     if (idx >= 0) {
+      if (this.fog) this.fog.removeVisionSource(this.buildings[idx].visionSourceId);
       this.buildings[idx].sprite.destroy();
       this.buildings.splice(idx, 1);
     }
@@ -156,7 +160,14 @@ export class BuildManager {
 
   destroy() {
     this.ghost.destroy();
-    for (const b of this.buildings) b.sprite.destroy();
+    for (const b of this.buildings) {
+      b.sprite.destroy();
+    }
     this.buildings.length = 0;
+  }
+
+  updateVisibilityByFog() {
+    if (!this.fog) return;
+    for (const b of this.buildings) b.sprite.setVisible(this.fog.isTileFullyVisible(b.tx, b.ty));
   }
 }

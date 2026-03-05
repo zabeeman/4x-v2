@@ -8,6 +8,7 @@ import { recomputeTrade } from './tradeSystem.js';
 import { buildLandRoute, buildWaterRoute } from './routePathfinding.js';
 import { resolveBuildZoneOwner, resolveBuildZoneOwnerMeta } from './buildZoneSystem.js';
 import { validatePlacement } from './placementValidator.js';
+import { BuildPlacementCache, BuildZoneProvider, WorldProvider, RulesCompiler } from './buildPlacementCache.js';
 export { validatePlacement } from './placementValidator.js';
 
 function nowId(prefix = 'id') {
@@ -21,6 +22,7 @@ export class GameSim {
     this.seed = seed;
 
     this._rev = 1;
+    this._worldDynamicVersion = 1;
 
     this.state = {
       spawn: null,
@@ -67,14 +69,67 @@ export class GameSim {
     };
 
     this._accMs = 0;
+    this._occupiedTileSet = new Set();
+    this._buildZoneProvider = new BuildZoneProvider(this);
+    this._worldProvider = new WorldProvider(this, this.infiniteCfg);
+    this._placementRules = new RulesCompiler().compileRulesFromCatalog(this.getCatalogue());
+    this.placementCache = new BuildPlacementCache({
+      world: this._worldProvider,
+      buildZone: this._buildZoneProvider,
+      rules: this._placementRules,
+      cfg: this.infiniteCfg,
+      chunkSize: this.infiniteCfg.chunkSize ?? 64,
+      radiusTiles: 300,
+    });
+    this.placementCache.warmup();
   }
 
   getRevision() { return this._rev; }
 
+  getDistanceToActiveZone(tx, ty) {
+    return this._distanceToBuildNetwork(tx, ty);
+  }
+
+  getFogRadiusBonuses() {
+    let fullInfoBonusTiles = 0;
+    let terrainInfoBonusTiles = 0;
+
+    for (const b of this.state.buildings) {
+      const def = this.getBuildingDef(b.typeId);
+      if (!def) continue;
+
+      const both = Number(def.fogRadiusBonusTiles ?? 0);
+      const full = Number(def.fogFullInfoBonusTiles ?? 0);
+      const terrain = Number(def.fogTerrainInfoBonusTiles ?? 0);
+
+      if (Number.isFinite(both)) {
+        fullInfoBonusTiles += both;
+        terrainInfoBonusTiles += both;
+      }
+      if (Number.isFinite(full)) fullInfoBonusTiles += full;
+      if (Number.isFinite(terrain)) terrainInfoBonusTiles += terrain;
+    }
+
+    return {
+      fullInfoBonusTiles,
+      terrainInfoBonusTiles,
+    };
+  }
+
   _bump() { this._rev++; }
+
+  _bumpWorldDynamic() { this._worldDynamicVersion += 1; }
+
+  getWorldDynamicVersion() { return this._worldDynamicVersion; }
+
+  _refreshOccupancyCache() {
+    this._occupiedTileSet = new Set(this.state.buildings.map((b) => `${b.tx},${b.ty}`));
+  }
 
   setSpawn(tx, ty) {
     this.state.spawn = { tx, ty };
+    this._buildZoneProvider.pushDelta({ fullRebuild: true });
+    this.placementCache.onBuildZoneChanged(null);
     this._bump();
   }
 
@@ -175,6 +230,9 @@ export class GameSim {
     this.state.zoneSourcesByCity.set(cityId, list);
 
     this.rebuildCityZones(cityId);
+    const added = zoneSource.tiles.map((t) => ({ x: t.tx, y: t.ty }));
+    this._buildZoneProvider.pushDelta({ added, removed: [] });
+    this.placementCache.onBuildZoneChanged({ added, removed: [] });
   }
 
   rebuildCityZones(cityId) {
@@ -398,7 +456,21 @@ export class GameSim {
     return this.validatePlacement(typeId, tx, ty);
   }
 
+  getPlacementMask(typeId) {
+    return this.placementCache?.getPlacementMask(typeId) ?? [];
+  }
+
   validatePlacement(typeId, tx, ty) {
+    if (this.placementCache && !this.placementCache.canPlaceAt(typeId, tx, ty)) {
+      return {
+        ok: false,
+        affordabilityOk: true,
+        reasons: [{ code: 'CACHE_PRECHECK_FAILED' }],
+        cityId: null,
+        footprint: [{ tx, ty }],
+      };
+    }
+
     const def = this.getBuildingDef(typeId);
     if (!def) {
       return {
@@ -509,6 +581,7 @@ export class GameSim {
     };
 
     this.state.buildings.push(b);
+    this._refreshOccupancyCache();
 
     const city = this.getCityById(cityId);
     if (city) city.buildings.push(b);
@@ -516,6 +589,8 @@ export class GameSim {
     this._ensureBuildZoneSource(b, def);
 
     this.recomputeDerived();
+    this._bumpWorldDynamic();
+    this.placementCache.invalidateTile(tx, ty);
     this._bump();
 
     return { ok: true, building: b, createdCityId: createdCity?.id ?? null };
@@ -559,6 +634,7 @@ export class GameSim {
 
     // Remove building from flat list
     this.state.buildings.splice(idx, 1);
+    this._refreshOccupancyCache();
 
     // Remove from city list if present
     if (city) {
@@ -571,6 +647,8 @@ export class GameSim {
       const next = list.filter((src) => src.sourceBuildingId !== b.id);
       this.state.zoneSourcesByCity.set(b.cityId, next);
       this.rebuildCityZones(b.cityId);
+      this._buildZoneProvider.pushDelta({ added: [], removed: [{ x: b.tx, y: b.ty }] });
+      this.placementCache.onBuildZoneChanged({ added: [], removed: [{ x: b.tx, y: b.ty }] });
     }
 
     // If it was a hub -> remove city and linked manual routes
@@ -587,6 +665,8 @@ export class GameSim {
     }
 
     this.recomputeDerived();
+    this._bumpWorldDynamic();
+    this.placementCache.invalidateTile(tx, ty);
     this._bump();
 
     return { ok: true, removedBuildingId: b.id, removedCityId };

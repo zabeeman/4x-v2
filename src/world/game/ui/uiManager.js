@@ -763,8 +763,7 @@ export class UIManager {
         `Конфликты: ${(focus.exclusiveGroups ?? []).join(', ') || '—'}`,
         `Требования: ${(focus.requires ?? []).join(', ') || '—'}`,
         `Запреты: ${(focus.forbids ?? []).join(', ') || '—'}`,
-      ].join('
-');
+      ].join('\n');
     } else {
       right.textContent = 'Нет доктрин в категории';
     }
