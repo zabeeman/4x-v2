@@ -16,7 +16,7 @@ export function createViewModeController(scene, opts = {}) {
 
   const baseState = new WeakMap();
   const isoTextureCache = new Map();
-  const isoTextureLRU = new ChunkTextureLRU(scene, { limit: 64 });
+  const isoTextureLRU = new ChunkTextureLRU(scene, { limit: Math.max(256, (opts.isoTextureLimit ?? 256)) });
 
   let mode = 'topdown';
   let originX = 0;

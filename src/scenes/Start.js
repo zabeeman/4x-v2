@@ -561,7 +561,7 @@ export class Start extends Phaser.Scene {
     this.viewModeCtl?.update();
     this.chunkMgr.update();
     this.viewModeCtl?.update();
-    this.fog.setAggressiveIsoOptimization(this.viewModeCtl?.getMode?.() === 'isometric');
+    this.fog.setAggressiveIsoOptimization(false);
     this.fog.update();
     this.build.updateVisibilityByFog();
     this.units.updateVisibilityByFog();
