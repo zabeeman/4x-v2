@@ -16,7 +16,6 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
 import { createViewModeController } from "../world/render/viewModeController.js";
-import { createTilePickerTopDown, createTilePickerIso } from "../world/render/tilePickers.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -133,9 +132,8 @@ export class Start extends Phaser.Scene {
     this.fog = new FogOfWar(this, this.cfg, this.gcfg);
     this.fog.setSim(this.sim);
 
-    // Units + build
+    // Units
     this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
-    this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog, this.sim);
 
     // Overlays & route renderer
     this.overlays = new OverlayManager(this, this.cfg, this.sim);
@@ -152,6 +150,8 @@ export class Start extends Phaser.Scene {
     });
     this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
 
+    // Build placement uses the same coordinate service as view/click systems.
+    this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog, this.sim, this.viewModeCtl);
 
     this.debugTilePick = parseBoolQ('debugTilePick', false);
     this.tilePickDebugText = this.add.text(12, 12, '', { fontSize: '12px', color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.55)', padding: { x: 6, y: 4 } })
@@ -406,9 +406,8 @@ export class Start extends Phaser.Scene {
   }
 
   _pickTile(pointer) {
-    const pCam = pointer.positionToCamera(this.cameras.main);
-    const tile = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
-    const world = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
+    const world = this.viewModeCtl.screenToWorld(pointer.x, pointer.y);
+    const tile = this.viewModeCtl.worldToTile(world.x, world.y);
 
     return {
       tx: tile.tx,
@@ -486,7 +485,7 @@ export class Start extends Phaser.Scene {
       // rewire overlays sim ref
       this.overlays.sim = this.sim;
 
-      this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog, this.sim);
+      this.build = new BuildManager(this, this.cfg, this.gcfg, this.fog, this.sim, this.viewModeCtl);
       this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
 
       this.build.setSelectedBuildType(null);
@@ -499,8 +498,9 @@ export class Start extends Phaser.Scene {
     const spawn = findSpawn(this.cfg.worldSeed, this.cfg, this.gcfg, other, this.safeDist);
     this.spawn = spawn;
 
-    const wx = (spawn.x + 0.5) * this.cfg.tileSize;
-    const wy = (spawn.y + 0.5) * this.cfg.tileSize;
+    const spawnAnchor = this.viewModeCtl.tileToWorldAnchor(spawn.x, spawn.y);
+    const wx = spawnAnchor.wx;
+    const wy = spawnAnchor.wy;
     this.cameras.main.centerOn(wx, wy);
     this.cameras.main.setZoom(this.gcfg.camera.initialZoom);
 
