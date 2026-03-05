@@ -15,6 +15,7 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
+import { createViewModeController } from "../world/render/viewModeController.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -135,6 +136,12 @@ export class Start extends Phaser.Scene {
     this.ui = new UIManager(this, this.cfg, this.gcfg);
     this.ui.create();
 
+    this.viewModeCtl = createViewModeController(this, {
+      isoScaleY: 0.56,
+      isoAngleDeg: -45,
+      isoZoomMul: 0.92,
+    });
+
     // Build palette
     const catalogue = this.sim.getCatalogue();
     this.ui.buildButtonsFromCatalogue(catalogue, (id) => {
@@ -223,6 +230,12 @@ export class Start extends Phaser.Scene {
     this.ui.setInfiniteResourcesHandler((flag) => {
       this.sim.setInfiniteResources(flag);
     });
+
+    this.ui.setViewModeHandler(() => {
+      const mode = this.viewModeCtl.toggleMode();
+      this.ui.setViewMode(mode);
+    });
+    this.ui.setViewMode(this.viewModeCtl.getMode());
 
     // Manual trade routes
     this.routeMode = { active: false, mode: 'land', srcCityId: null, hoverCityId: null };
@@ -357,6 +370,11 @@ export class Start extends Phaser.Scene {
       this.overlays.setPlacementType(null);
     });
 
+    this.input.keyboard.on("keydown-V", () => {
+      const mode = this.viewModeCtl.toggleMode();
+      this.ui.setViewMode(mode);
+    });
+
     this.input.keyboard.on("keydown-C", (ev) => {
       if (ev.shiftKey) {
         clearSpawnRegistry();
@@ -452,6 +470,7 @@ export class Start extends Phaser.Scene {
     if (!this.sim) return;
 
     this.cameraCtl.update();
+    this.viewModeCtl?.update();
     this.chunkMgr.update();
     this.fog.update();
     this.build.updateVisibilityByFog();
