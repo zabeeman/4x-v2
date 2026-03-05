@@ -121,6 +121,7 @@ export class Start extends Phaser.Scene {
 
     // Fog
     this.fog = new FogOfWar(this, this.cfg, this.gcfg);
+    this.fog.setSim(this.sim);
 
     // Units + build
     this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
@@ -396,6 +397,7 @@ export class Start extends Phaser.Scene {
       const doctrineSnapshot = loadDoctrineSnapshotFromStorage();
       if (doctrineSnapshot) this.sim.importDoctrineSnapshot(doctrineSnapshot);
       this._lastDoctrineSaveRev = -1;
+      this.fog.setSim(this.sim);
 
       // rewire overlays sim ref
       this.overlays.sim = this.sim;
@@ -420,8 +422,6 @@ export class Start extends Phaser.Scene {
 
     this.build.setSpawnTile(spawn);
     this.sim.setSpawn(spawn.x, spawn.y);
-
-    this.fog.discoverCircle(spawn.x, spawn.y, this.gcfg.fog.startRevealRadiusTiles);
 
     const u = this.units.addUnitAtTile(spawn.x, spawn.y, { name: "Разведчик" });
     this.units.selectUnit(u.id);

@@ -2,11 +2,12 @@
 
 function key(cx, cy) { return `${cx},${cy}`; }
 
-function bitIndex(index) {
-  return {
-    byte: index >> 3,
-    mask: 1 << (index & 7),
-  };
+const TILE_HIDDEN = 0;
+const TILE_TERRAIN = 1;
+const TILE_FULL = 2;
+
+function bitAddr(index) {
+  return { byte: index >> 3, mask: 1 << (index & 7) };
 }
 
 export class FogOfWar {
@@ -16,26 +17,41 @@ export class FogOfWar {
     this.infiniteCfg = infiniteCfg;
     this.gameCfg = gameCfg;
 
+    this.sim = null;
+    this.simRevision = -1;
+
     this.tileSize = infiniteCfg.tileSize;
     this.chunkTiles = (gameCfg.fog.fogChunkTiles ?? infiniteCfg.chunkSize);
     this.chunkPx = this.chunkTiles * this.tileSize;
 
-    this.alpha = gameCfg.fog.fogAlpha ?? 0.9;
-    this.terrainOnlyAlpha = gameCfg.fog.terrainOnlyAlpha ?? Math.max(0, this.alpha * 0.6);
+    this.fullFogAlpha = gameCfg.fog.fogAlpha ?? 0.82;
+    this.terrainFogAlpha = gameCfg.fog.terrainOnlyAlpha ?? Math.max(0, this.fullFogAlpha * 0.55);
 
-    this.renderChunks = new Map(); // k -> { cx, cy, texKey, tex, img }
-    this.stateChunks = new Map();  // k -> { terrainBits, visibleBits }
-    this.visionSources = new Map(); // id -> { tx, ty, radius }
-    this.visibilityDirty = false;
+    this.baseFullInfoRadiusTiles = gameCfg.fog.fullInfoRadiusTiles ?? 100;
+    this.baseTerrainInfoRadiusTiles = gameCfg.fog.terrainInfoRadiusTiles ?? 300;
 
-    this.dirtyQueue = [];
+    this.radiusFullInfoTiles = this.baseFullInfoRadiusTiles;
+    this.radiusTerrainInfoTiles = this.baseTerrainInfoRadiusTiles;
+
+    this.stateChunks = new Map(); // persistent bitmap state per chunk
+    this.renderChunks = new Map(); // ephemeral visible render objects
+
     this.dirtySet = new Set();
+    this.dirtyQueue = [];
+  }
+
+  setSim(sim) {
+    this.sim = sim ?? null;
+    this.simRevision = -1;
+    this._recomputeRadii();
+    this._invalidateAllState();
   }
 
   tileToFogChunk(tx, ty) {
-    const cx = Math.floor(tx / this.chunkTiles);
-    const cy = Math.floor(ty / this.chunkTiles);
-    return { cx, cy };
+    return {
+      cx: Math.floor(tx / this.chunkTiles),
+      cy: Math.floor(ty / this.chunkTiles),
+    };
   }
 
   _ensureStateChunk(cx, cy) {
@@ -44,12 +60,13 @@ export class FogOfWar {
 
     const tileCount = this.chunkTiles * this.chunkTiles;
     const byteCount = Math.ceil(tileCount / 8);
-    const chunk = {
+    const state = {
       terrainBits: new Uint8Array(byteCount),
-      visibleBits: new Uint8Array(byteCount),
+      fullBits: new Uint8Array(byteCount),
+      computedRevision: -1,
     };
-    this.stateChunks.set(k, chunk);
-    return chunk;
+    this.stateChunks.set(k, state);
+    return state;
   }
 
   _ensureRenderChunk(cx, cy) {
@@ -71,16 +88,6 @@ export class FogOfWar {
     return chunk;
   }
 
-  _tileBitset(tx, ty) {
-    const { cx, cy } = this.tileToFogChunk(tx, ty);
-    const lx = tx - cx * this.chunkTiles;
-    const ly = ty - cy * this.chunkTiles;
-    if (lx < 0 || ly < 0 || lx >= this.chunkTiles || ly >= this.chunkTiles) return null;
-
-    const idx = ly * this.chunkTiles + lx;
-    return { cx, cy, bit: bitIndex(idx) };
-  }
-
   _markDirty(cx, cy) {
     const k = key(cx, cy);
     if (this.dirtySet.has(k)) return;
@@ -88,135 +95,113 @@ export class FogOfWar {
     this.dirtyQueue.push({ cx, cy });
   }
 
-  _setTileVisible(tx, ty, visible, discover) {
-    const tile = this._tileBitset(tx, ty);
-    if (!tile) return;
-
-    const state = this._ensureStateChunk(tile.cx, tile.cy);
-    const { byte, mask } = tile.bit;
-
-    const prevTerrain = (state.terrainBits[byte] & mask) !== 0;
-    const prevVisible = (state.visibleBits[byte] & mask) !== 0;
-
-    if (discover) state.terrainBits[byte] |= mask;
-    if (visible) state.visibleBits[byte] |= mask;
-    else state.visibleBits[byte] &= ~mask;
-
-    const nextTerrain = (state.terrainBits[byte] & mask) !== 0;
-    const nextVisible = (state.visibleBits[byte] & mask) !== 0;
-    if (prevTerrain !== nextTerrain || prevVisible !== nextVisible) this._markDirty(tile.cx, tile.cy);
-  }
-
-  revealCircle(centerTx, centerTy, radiusTiles) {
-    this.discoverCircle(centerTx, centerTy, radiusTiles);
-  }
-
-  discoverCircle(centerTx, centerTy, radiusTiles) {
-    if (!this.gameCfg.fog.enabled) return;
-    const r = radiusTiles;
-    const r2 = r * r;
-
-    const minX = Math.floor(centerTx - r);
-    const maxX = Math.floor(centerTx + r);
-    const minY = Math.floor(centerTy - r);
-    const maxY = Math.floor(centerTy + r);
-
-    for (let ty = minY; ty <= maxY; ty++) {
-      const dy = ty - centerTy;
-      for (let tx = minX; tx <= maxX; tx++) {
-        const dx = tx - centerTx;
-        if (dx * dx + dy * dy > r2) continue;
-        this._setTileVisible(tx, ty, false, true);
-      }
+  _forEachTileInChunk(cx, cy, fn) {
+    const sx = cx * this.chunkTiles;
+    const sy = cy * this.chunkTiles;
+    for (let ly = 0; ly < this.chunkTiles; ly++) {
+      for (let lx = 0; lx < this.chunkTiles; lx++) fn(sx + lx, sy + ly, lx, ly);
     }
   }
 
-  upsertVisionSource(id, tx, ty, radiusTiles) {
-    if (!id) return;
-    const next = { tx: tx | 0, ty: ty | 0, radius: Math.max(0, radiusTiles | 0) };
-    const prev = this.visionSources.get(id);
+  _getTileState(tx, ty) {
+    if (!this.sim) return TILE_HIDDEN;
 
-    if (prev && prev.tx === next.tx && prev.ty === next.ty && prev.radius === next.radius) return;
-    this.visionSources.set(id, next);
-    this.visibilityDirty = true;
+    const d = this.sim.getDistanceToActiveZone(tx, ty);
+    if (!Number.isFinite(d)) return TILE_HIDDEN;
+
+    if (d <= this.radiusFullInfoTiles) return TILE_FULL;
+    if (d <= this.radiusTerrainInfoTiles) return TILE_TERRAIN;
+    return TILE_HIDDEN;
   }
 
-  removeVisionSource(id) {
-    if (!id) return;
-    if (this.visionSources.delete(id)) this.visibilityDirty = true;
+  _recomputeRadii() {
+    let fullBonus = 0;
+    let terrainBonus = 0;
+
+    if (this.sim?.getFogRadiusBonuses) {
+      const bonus = this.sim.getFogRadiusBonuses();
+      fullBonus = Number(bonus?.fullInfoBonusTiles ?? 0) || 0;
+      terrainBonus = Number(bonus?.terrainInfoBonusTiles ?? 0) || 0;
+    }
+
+    this.radiusFullInfoTiles = Math.max(0, Math.floor(this.baseFullInfoRadiusTiles + fullBonus));
+    this.radiusTerrainInfoTiles = Math.max(this.radiusFullInfoTiles, Math.floor(this.baseTerrainInfoRadiusTiles + terrainBonus));
   }
 
-  _rebuildVisibilityBitmap() {
-    for (const state of this.stateChunks.values()) state.visibleBits.fill(0);
+  _invalidateAllState() {
+    for (const state of this.stateChunks.values()) state.computedRevision = -1;
+    for (const c of this.renderChunks.values()) this._markDirty(c.cx, c.cy);
+  }
 
-    for (const src of this.visionSources.values()) {
-      const r = src.radius;
-      const r2 = r * r;
-      const minX = Math.floor(src.tx - r);
-      const maxX = Math.floor(src.tx + r);
-      const minY = Math.floor(src.ty - r);
-      const maxY = Math.floor(src.ty + r);
+  _rebuildStateChunk(cx, cy) {
+    const state = this._ensureStateChunk(cx, cy);
+    state.terrainBits.fill(0);
+    state.fullBits.fill(0);
 
-      for (let ty = minY; ty <= maxY; ty++) {
-        const dy = ty - src.ty;
-        for (let tx = minX; tx <= maxX; tx++) {
-          const dx = tx - src.tx;
-          if (dx * dx + dy * dy > r2) continue;
-          this._setTileVisible(tx, ty, true, true);
+    this._forEachTileInChunk(cx, cy, (tx, ty, lx, ly) => {
+      const idx = ly * this.chunkTiles + lx;
+      const { byte, mask } = bitAddr(idx);
+      const v = this._getTileState(tx, ty);
+      if (v >= TILE_TERRAIN) state.terrainBits[byte] |= mask;
+      if (v >= TILE_FULL) state.fullBits[byte] |= mask;
+    });
+
+    state.computedRevision = this.simRevision;
+  }
+
+  _ensureChunkStateActual(cx, cy) {
+    const state = this._ensureStateChunk(cx, cy);
+    if (state.computedRevision === this.simRevision) return state;
+    this._rebuildStateChunk(cx, cy);
+    return state;
+  }
+
+  _redrawChunk(cx, cy) {
+    const rc = this._ensureRenderChunk(cx, cy);
+    const state = this._ensureChunkStateActual(cx, cy);
+    const ctx = rc.tex.getContext();
+    ctx.imageSmoothingEnabled = false;
+
+    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
+    ctx.fillStyle = `rgba(0,0,0,${this.fullFogAlpha})`;
+    ctx.fillRect(0, 0, this.chunkPx, this.chunkPx);
+
+    ctx.fillStyle = `rgba(0,0,0,${this.terrainFogAlpha})`;
+    for (let ly = 0; ly < this.chunkTiles; ly++) {
+      for (let lx = 0; lx < this.chunkTiles; lx++) {
+        const idx = ly * this.chunkTiles + lx;
+        const { byte, mask } = bitAddr(idx);
+        const terrain = (state.terrainBits[byte] & mask) !== 0;
+        const full = (state.fullBits[byte] & mask) !== 0;
+        if (terrain && !full) {
+          ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
         }
       }
     }
 
-    this.visibilityDirty = false;
-  }
-
-  _redrawChunk(cx, cy) {
-    const renderChunk = this._ensureRenderChunk(cx, cy);
-    const state = this._ensureStateChunk(cx, cy);
-    const ctx = renderChunk.tex.getContext();
-    ctx.imageSmoothingEnabled = false;
-
-    // unseen cells
-    ctx.clearRect(0, 0, this.chunkPx, this.chunkPx);
-    ctx.fillStyle = `rgba(0,0,0,${this.alpha})`;
-    ctx.fillRect(0, 0, this.chunkPx, this.chunkPx);
-
-    // discovered terrain only
-    ctx.fillStyle = `rgba(0,0,0,${this.terrainOnlyAlpha})`;
-    for (let ly = 0; ly < this.chunkTiles; ly++) {
-      for (let lx = 0; lx < this.chunkTiles; lx++) {
-        const idx = ly * this.chunkTiles + lx;
-        const { byte, mask } = bitIndex(idx);
-        const known = (state.terrainBits[byte] & mask) !== 0;
-        const visible = (state.visibleBits[byte] & mask) !== 0;
-        if (known && !visible) ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
-      }
-    }
-
-    // fully visible now
     ctx.globalCompositeOperation = "destination-out";
     for (let ly = 0; ly < this.chunkTiles; ly++) {
       for (let lx = 0; lx < this.chunkTiles; lx++) {
         const idx = ly * this.chunkTiles + lx;
-        const { byte, mask } = bitIndex(idx);
-        if ((state.visibleBits[byte] & mask) !== 0) {
+        const { byte, mask } = bitAddr(idx);
+        if ((state.fullBits[byte] & mask) !== 0) {
           ctx.fillRect(lx * this.tileSize, ly * this.tileSize, this.tileSize, this.tileSize);
         }
       }
     }
     ctx.globalCompositeOperation = "source-over";
 
-    renderChunk.tex.refresh();
+    rc.tex.refresh();
   }
 
   _updateNeededChunks() {
     const v = this.cam.worldView;
-    const marginChunks = this.infiniteCfg.marginChunks ?? 2;
+    const margin = this.infiniteCfg.marginChunks ?? 2;
 
-    const minCX = Math.floor(v.x / this.chunkPx) - marginChunks;
-    const maxCX = Math.floor((v.x + v.width) / this.chunkPx) + marginChunks;
-    const minCY = Math.floor(v.y / this.chunkPx) - marginChunks;
-    const maxCY = Math.floor((v.y + v.height) / this.chunkPx) + marginChunks;
+    const minCX = Math.floor(v.x / this.chunkPx) - margin;
+    const maxCX = Math.floor((v.x + v.width) / this.chunkPx) + margin;
+    const minCY = Math.floor(v.y / this.chunkPx) - margin;
+    const maxCY = Math.floor((v.y + v.height) / this.chunkPx) + margin;
 
     for (let cy = minCY; cy <= maxCY; cy++) {
       for (let cx = minCX; cx <= maxCX; cx++) this._ensureRenderChunk(cx, cy);
@@ -232,24 +217,41 @@ export class FogOfWar {
   }
 
   isTileFullyVisible(tx, ty) {
-    const tile = this._tileBitset(tx, ty);
-    if (!tile) return false;
-    const state = this.stateChunks.get(key(tile.cx, tile.cy));
-    if (!state) return false;
-    return (state.visibleBits[tile.bit.byte] & tile.bit.mask) !== 0;
+    const { cx, cy } = this.tileToFogChunk(tx, ty);
+    const state = this._ensureChunkStateActual(cx, cy);
+    const lx = tx - cx * this.chunkTiles;
+    const ly = ty - cy * this.chunkTiles;
+    if (lx < 0 || ly < 0 || lx >= this.chunkTiles || ly >= this.chunkTiles) return false;
+    const idx = ly * this.chunkTiles + lx;
+    const { byte, mask } = bitAddr(idx);
+    return (state.fullBits[byte] & mask) !== 0;
   }
 
   isTileTerrainKnown(tx, ty) {
-    const tile = this._tileBitset(tx, ty);
-    if (!tile) return false;
-    const state = this.stateChunks.get(key(tile.cx, tile.cy));
-    if (!state) return false;
-    return (state.terrainBits[tile.bit.byte] & tile.bit.mask) !== 0;
+    const { cx, cy } = this.tileToFogChunk(tx, ty);
+    const state = this._ensureChunkStateActual(cx, cy);
+    const lx = tx - cx * this.chunkTiles;
+    const ly = ty - cy * this.chunkTiles;
+    if (lx < 0 || ly < 0 || lx >= this.chunkTiles || ly >= this.chunkTiles) return false;
+    const idx = ly * this.chunkTiles + lx;
+    const { byte, mask } = bitAddr(idx);
+    return (state.terrainBits[byte] & mask) !== 0;
   }
+
+  // Backward-compatible no-op for old callsites.
+  revealCircle() {}
+  discoverCircle() {}
 
   update() {
     if (!this.gameCfg.fog.enabled) return;
-    if (this.visibilityDirty) this._rebuildVisibilityBitmap();
+
+    const nextRevision = this.sim?.getRevision?.() ?? 0;
+    if (nextRevision !== this.simRevision) {
+      this.simRevision = nextRevision;
+      this._recomputeRadii();
+      this._invalidateAllState();
+    }
+
     this._updateNeededChunks();
 
     const budget = this.gameCfg.fog.maxFogRedrawPerFrame ?? 2;
@@ -267,10 +269,9 @@ export class FogOfWar {
     }
     this.renderChunks.clear();
     this.stateChunks.clear();
-    this.visionSources.clear();
-    this.visibilityDirty = false;
     this.dirtyQueue.length = 0;
     this.dirtySet.clear();
+    this.simRevision = -1;
   }
 
   destroy() {

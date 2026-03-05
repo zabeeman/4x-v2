@@ -131,10 +131,6 @@ export class BuildManager {
     };
     this.buildings.push(bVis);
 
-    // register as persistent vision source
-    const rr = type.fogRevealRadiusTiles ?? this.gameCfg.fog.buildingRevealRadiusTiles;
-    if (this.fog) this.fog.upsertVisionSource(bVis.visionSourceId, tx, ty, rr);
-
     return bVis;
   }
 
@@ -158,7 +154,6 @@ export class BuildManager {
   destroy() {
     this.ghost.destroy();
     for (const b of this.buildings) {
-      if (this.fog) this.fog.removeVisionSource(b.visionSourceId);
       b.sprite.destroy();
     }
     this.buildings.length = 0;

@@ -76,7 +76,6 @@ export class UnitManager {
 
   destroy() {
     for (const u of this.units) {
-      if (this.fog) this.fog.removeVisionSource(u.visionSourceId);
       u.sprite.destroy();
     }
     this.units.length = 0;

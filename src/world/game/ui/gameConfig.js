@@ -19,19 +19,20 @@ export const gameConfig = {
     maxSlope: 0.72,
   },
 
-  // Fog of war (permanent reveal)
+  // Fog of war (distance to active zone)
   fog: {
     enabled: true,
-    // No fog in radius around initial spawn
-    startRevealRadiusTiles: 100,
-    // Units reveal around themselves while moving
-    unitRevealRadiusTiles: 20,
-    // Buildings reveal around themselves when placed
-    buildingRevealRadiusTiles: 35,
+    // Distance rings from active zone:
+    //   0..fullInfoRadiusTiles       -> full info
+    //   full..terrainInfoRadiusTiles -> terrain-only
+    //   > terrainInfoRadiusTiles     -> hidden
+    fullInfoRadiusTiles: 100,
+    terrainInfoRadiusTiles: 300,
 
     // Fog rendering chunks in tiles (keep equal to terrain chunk size for alignment)
     fogChunkTiles: null, // if null -> will use infiniteConfig.chunkSize
-    fogAlpha: 0.78, // opacity of fog for unexplored tiles
+    fogAlpha: 0.78, // opacity of fully hidden tiles
+    terrainOnlyAlpha: 0.45, // opacity where only terrain is known
     maxFogRedrawPerFrame: 2, // throttling
     depth: 900, // render depth above terrain
   },
