@@ -64,6 +64,10 @@ export class BuildManager {
   updateGhost(seed, worldX, worldY) {
     const tx = Math.floor(worldX / this.tileSize);
     const ty = Math.floor(worldY / this.tileSize);
+    this.updateGhostAtTile(seed, tx, ty);
+  }
+
+  updateGhostAtTile(seed, tx, ty) {
 
     const type = this.getSelectedBuildType();
     if (!type) { this.ghost.setVisible(false); return; }

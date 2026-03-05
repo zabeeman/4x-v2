@@ -235,6 +235,7 @@ export class Start extends Phaser.Scene {
     this.ui.setViewModeHandler(() => {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
+      this._refreshGhostUnderPointer();
     });
     this.ui.setViewMode(this.viewModeCtl.getMode());
 
@@ -260,7 +261,6 @@ export class Start extends Phaser.Scene {
     this.input.on("pointermove", (pointer) => {
       if (this.ui.isPointerOverUI(pointer)) return;
       const pCam = pointer.positionToCamera(this.cameras.main);
-      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
       const tilePos = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
       const tx = tilePos.tx;
       const ty = tilePos.ty;
@@ -272,9 +272,7 @@ export class Start extends Phaser.Scene {
         return;
       }
 
-      const vc = this.viewModeCtl.tileToView(tx, ty);
-      const worldGhost = this.viewModeCtl.viewToWorld(vc.x, vc.y);
-      this.build.updateGhost(this.cfg.worldSeed, worldGhost.x, worldGhost.y);
+      this.build.updateGhostAtTile(this.cfg.worldSeed, tx, ty);
       const selected = this.build.getSelectedBuildType();
       if (selected) {
         const placement = this.build.isValidBuildTile(this.cfg.worldSeed, tx, ty);
@@ -379,6 +377,7 @@ export class Start extends Phaser.Scene {
     this.input.keyboard.on("keydown-V", () => {
       const mode = this.viewModeCtl.toggleMode();
       this.ui.setViewMode(mode);
+      this._refreshGhostUnderPointer();
     });
 
     this.input.keyboard.on("keydown-C", (ev) => {
@@ -388,6 +387,19 @@ export class Start extends Phaser.Scene {
       }
     });
   }
+
+  _refreshGhostUnderPointer() {
+    const selected = this.build.getSelectedBuildType();
+    if (!selected) return;
+
+    const pointer = this.input?.activePointer;
+    if (!pointer) return;
+
+    const pCam = pointer.positionToCamera(this.cameras.main);
+    const tilePos = this.viewModeCtl.viewToTile(pCam.x, pCam.y);
+    this.build.updateGhostAtTile(this.cfg.worldSeed, tilePos.tx, tilePos.ty);
+  }
+
 
   _startRouteMode(mode) {
     this.routeMode.active = true;
