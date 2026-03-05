@@ -23,17 +23,30 @@ export function createViewModeController(scene, opts = {}) {
   let originY = 0;
 
   function isChunkTextureKey(key) {
-    return /^(chunk|wave|fog|buildarea|place|district|influence)_-?\d+_-?\d+$/.test(key);
+    return /^(chunk|wave|fog|buildarea|place|district|influence)_(?:-?\d+_){1,3}-?\d+$/.test(key);
   }
 
   function isDynamicChunkTextureKey(key) {
     return /^(wave|fog|buildarea|place|district|influence)_/.test(key);
   }
 
+
+  function normalizeBaseTextureKey(key) {
+    if (typeof key !== 'string') return key ?? null;
+    if (!key.startsWith('iso_')) return key;
+    const original = key.slice(4);
+    if (scene.textures.exists(original)) return original;
+    return key;
+  }
+
   function parseChunkKey(key) {
-    const m = key.match(/^([a-z]+)_(-?\d+)_(-?\d+)$/);
-    if (!m) return null;
-    return { kind: m[1], cx: Number(m[2]), cy: Number(m[3]) };
+    const parts = key.split('_');
+    if (parts.length < 3) return null;
+    const kind = parts[0];
+    const cx = Number(parts[parts.length - 2]);
+    const cy = Number(parts[parts.length - 1]);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+    return { kind, cx, cy };
   }
 
   function gridToScreen(gx, gy) {
@@ -71,6 +84,12 @@ export function createViewModeController(scene, opts = {}) {
     return { x: w.wx, y: w.wy };
   }
 
+
+  function screenToWorld(px, py) {
+    const view = coords.screenToWorld(px, py);
+    return viewToWorld(view.x, view.y);
+  }
+
   function viewToTile(sx, sy) {
     const world = viewToWorld(sx, sy);
     return coords.worldToTile(world.x, world.y);
@@ -97,7 +116,7 @@ export function createViewModeController(scene, opts = {}) {
       originX: obj.originX ?? 0.5,
       originY: obj.originY ?? 0.5,
       depth: obj.depth ?? 0,
-      textureKey: obj.texture?.key ?? null,
+      textureKey: normalizeBaseTextureKey(obj.texture?.key ?? null),
       appliedX: null,
       appliedY: null,
     });
@@ -166,14 +185,19 @@ export function createViewModeController(scene, opts = {}) {
     const tKey = base.textureKey ?? obj.texture?.key ?? '';
     if (isChunkTextureKey(tKey)) return;
 
+    const isTileDiamond = !!obj.getData?.('isoTileDiamond');
+
     const ax = base.appliedX;
     const ay = base.appliedY;
     if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
       base.x = obj.x ?? base.x;
       base.y = obj.y ?? base.y;
-      base.rotation = obj.rotation ?? base.rotation;
-      base.scaleX = obj.scaleX ?? base.scaleX;
-      base.scaleY = obj.scaleY ?? base.scaleY;
+
+      if (mode !== 'isometric' && !isTileDiamond) {
+        base.rotation = obj.rotation ?? base.rotation;
+        base.scaleX = obj.scaleX ?? base.scaleX;
+        base.scaleY = obj.scaleY ?? base.scaleY;
+      }
       return;
     }
 
@@ -181,9 +205,16 @@ export function createViewModeController(scene, opts = {}) {
     if (movedByGame) {
       base.x = obj.x ?? base.x;
       base.y = obj.y ?? base.y;
-      base.rotation = obj.rotation ?? base.rotation;
-      base.scaleX = obj.scaleX ?? base.scaleX;
-      base.scaleY = obj.scaleY ?? base.scaleY;
+
+      // While isometric transforms are active, obj.rotation/scale are render-time values
+      // (angle/scale skew applied by this controller), not logical game-space base values.
+      // Do not feed them back into base state, otherwise toggling view modes distorts objects
+      // such as ghost diamonds into thin slashes.
+      if (mode !== 'isometric' && !isTileDiamond) {
+        base.rotation = obj.rotation ?? base.rotation;
+        base.scaleX = obj.scaleX ?? base.scaleX;
+        base.scaleY = obj.scaleY ?? base.scaleY;
+      }
     }
   }
 
@@ -263,7 +294,7 @@ export function createViewModeController(scene, opts = {}) {
         originX: obj.originX ?? 0.5,
         originY: obj.originY ?? 0.5,
         depth: obj.depth ?? 0,
-        textureKey: obj.texture?.key ?? null,
+        textureKey: normalizeBaseTextureKey(obj.texture?.key ?? null),
       appliedX: null,
       appliedY: null,
       });
@@ -326,7 +357,7 @@ export function createViewModeController(scene, opts = {}) {
     viewToTile,
     tileToView,
     viewDeltaToWorldDelta,
-    screenToWorld: coords.screenToWorld,
+    screenToWorld,
     worldToTile: coords.worldToTile,
     tileToWorldAnchor: coords.tileToWorldAnchor,
     tileToIsoScreen: coords.tileToIsoScreen,
