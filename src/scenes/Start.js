@@ -138,7 +138,6 @@ export class Start extends Phaser.Scene {
 
     this.viewModeCtl = createViewModeController(this, {
       isoYScale: 0.5,
-      worldScale: 1,
     });
 
     // Build palette
