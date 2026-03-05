@@ -11,7 +11,12 @@ export class BuildManager {
     this.tileSize = infiniteCfg.tileSize;
     this.coords = coordinateService;
 
-    const ghostSize = Number.isFinite(this.coords?.tileW) ? this.coords.tileW * 0.5 : this.tileSize;
+    // Match iso tile rhombus dimensions under viewMode transform (rotate 45° + scaleY 0.5).
+    // For a square side S: final width = S*sqrt(2), final height = S*sqrt(2)/2.
+    // So S must be tileW/sqrt(2) to align ghost with iso tile plane/size.
+    const ghostSize = Number.isFinite(this.coords?.tileW)
+      ? (this.coords.tileW / Math.SQRT2)
+      : this.tileSize;
 
     this.buildings = []; // visuals: { id,typeId, tx,ty, sprite }
     this.selectedBuildTypeId = null;

@@ -16,8 +16,6 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
 import { createViewModeController } from "../world/render/viewModeController.js";
-import { ChunkCacheService } from "../world/cache/ChunkCacheService.js";
-import { WorldStreamer } from "../world/stream/WorldStreamer.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
