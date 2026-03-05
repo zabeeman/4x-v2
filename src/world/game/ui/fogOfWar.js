@@ -33,6 +33,11 @@ export class FogOfWar {
     this.radiusFullInfoTiles = this.baseFullInfoRadiusTiles;
     this.radiusTerrainInfoTiles = this.baseTerrainInfoRadiusTiles;
 
+    this.optimization = {
+      aggressiveIso: false,
+      activeZonePaddingTiles: 200,
+    };
+
     this.stateChunks = new Map(); // persistent bitmap state per chunk
     this.renderChunks = new Map(); // ephemeral visible render objects
 
@@ -44,6 +49,13 @@ export class FogOfWar {
     this.sim = sim ?? null;
     this.simRevision = -1;
     this._recomputeRadii();
+    this._invalidateAllState();
+  }
+
+  setAggressiveIsoOptimization(enabled) {
+    const next = !!enabled;
+    if (this.optimization.aggressiveIso === next) return;
+    this.optimization.aggressiveIso = next;
     this._invalidateAllState();
   }
 
@@ -105,6 +117,19 @@ export class FogOfWar {
 
   _getTileState(tx, ty) {
     if (!this.sim) return TILE_HIDDEN;
+
+    if (this.optimization.aggressiveIso) {
+      const bounds = this.sim.getActiveZoneBoundsTiles?.();
+      if (bounds) {
+        const pad = Math.max(0, Math.floor(this.optimization.activeZonePaddingTiles ?? 200));
+        if (
+          tx < bounds.minTx - pad ||
+          tx > bounds.maxTx + pad ||
+          ty < bounds.minTy - pad ||
+          ty > bounds.maxTy + pad
+        ) return TILE_HIDDEN;
+      }
+    }
 
     const d = this.sim.getDistanceToActiveZone(tx, ty);
     if (!Number.isFinite(d)) return TILE_HIDDEN;
