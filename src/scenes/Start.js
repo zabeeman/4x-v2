@@ -70,9 +70,24 @@ function saveDoctrineSnapshotToStorage(snapshot) {
   }
 }
 
+async function loadDoctrineCatalog() {
+  try {
+    const response = await fetch('./doctrines_catalog.json');
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export class Start extends Phaser.Scene {
   constructor() {
     super("Start");
+  }
+
+  preload() {
+    this.load.json('doctrine_catalog', 'doctrines_catalog.json');
   }
 
   create() {
@@ -101,7 +116,8 @@ export class Start extends Phaser.Scene {
     this.gcfg = gameConfig;
 
     // Sim data + sim
-    this.gameData = createDefaultGameData(this.gcfg);
+    const doctrineCatalog = this.cache?.json?.get?.('doctrine_catalog') ?? null;
+    this.gameData = createDefaultGameData(this.gcfg, doctrineCatalog);
     this.sim = new GameSim(this.gameData, this.cfg, this.cfg.worldSeed);
     this._lastDoctrineSaveRev = -1;
 
@@ -114,6 +130,7 @@ export class Start extends Phaser.Scene {
 
     // Fog
     this.fog = new FogOfWar(this, this.cfg, this.gcfg);
+    this.fog.setSim(this.sim);
 
     // Units + build
     this.units = new UnitManager(this, this.cfg, this.gcfg, this.fog);
@@ -225,6 +242,11 @@ export class Start extends Phaser.Scene {
     });
 
     this._lastRouteListRev = -1;
+    this._lastRouteRenderRev = -1;
+    this._lastRouteRenderSel = { src: null, hover: null, active: false, mode: null };
+
+    this._hudUpdateMs = this.gcfg.ui?.hudUpdateMs ?? 200;
+    this._hudAccumMs = this._hudUpdateMs;
 
     // Spawn + initial state
     this._spawnAndInit();
@@ -237,7 +259,8 @@ export class Start extends Phaser.Scene {
 
       if (this.routeMode.active) {
         const c = this.sim.findCityHubAt(tx, ty, 2);
-        this.routeMode.hoverCityId = c?.id ?? null;
+        const nextHover = c?.id ?? null;
+        if (nextHover !== this.routeMode.hoverCityId) this.routeMode.hoverCityId = nextHover;
         return;
       }
 
@@ -381,6 +404,7 @@ export class Start extends Phaser.Scene {
       const doctrineSnapshot = loadDoctrineSnapshotFromStorage();
       if (doctrineSnapshot) this.sim.importDoctrineSnapshot(doctrineSnapshot);
       this._lastDoctrineSaveRev = -1;
+      this.fog.setSim(this.sim);
 
       // rewire overlays sim ref
       this.overlays.sim = this.sim;
@@ -408,8 +432,6 @@ export class Start extends Phaser.Scene {
     this.build.setSpawnTile(spawn);
     this.sim.setSpawn(spawn.x, spawn.y);
 
-    this.fog.revealCircle(spawn.x, spawn.y, this.gcfg.fog.startRevealRadiusTiles);
-
     const u = this.units.addUnitAtTile(spawn.x, spawn.y, { name: "Разведчик" });
     this.units.selectUnit(u.id);
 
@@ -436,9 +458,13 @@ export class Start extends Phaser.Scene {
   }
 
   update(_t, dt) {
+    if (!this.sim) return;
+
     this.cameraCtl.update();
     this.chunkMgr.update();
     this.fog.update();
+    this.build.updateVisibilityByFog();
+    this.units.updateVisibilityByFog();
 
     // sim
     this.sim.update(dt);
@@ -446,17 +472,32 @@ export class Start extends Phaser.Scene {
     // overlays + routes
     this.overlays.update();
 
-    this.routeRenderer.render(
-      this.sim.state.trade.routes,
-      this.sim.getCities(),
-      {
-        src: this.routeMode.srcCityId,
-        hover: this.routeMode.hoverCityId,
-      }
-    );
-
     // route list (manual routes) update only when sim changes
     const rev = this.sim.getRevision();
+
+    const shouldRerenderRoutes = (
+      rev !== this._lastRouteRenderRev
+      || this._lastRouteRenderSel.src !== this.routeMode.srcCityId
+      || this._lastRouteRenderSel.hover !== this.routeMode.hoverCityId
+      || this._lastRouteRenderSel.active !== this.routeMode.active
+      || this._lastRouteRenderSel.mode !== this.routeMode.mode
+    );
+
+    if (shouldRerenderRoutes) {
+      this.routeRenderer.render(
+        this.sim.state.trade.routes,
+        this.sim.getCities(),
+        {
+          src: this.routeMode.srcCityId,
+          hover: this.routeMode.hoverCityId,
+        }
+      );
+      this._lastRouteRenderRev = rev;
+      this._lastRouteRenderSel.src = this.routeMode.srcCityId;
+      this._lastRouteRenderSel.hover = this.routeMode.hoverCityId;
+      this._lastRouteRenderSel.active = this.routeMode.active;
+      this._lastRouteRenderSel.mode = this.routeMode.mode;
+    }
     if (rev !== this._lastRouteListRev) {
       this._lastRouteListRev = rev;
       this.ui.renderRoutes(this.sim.state.trade.routes, this.sim.getCities(), (routeId) => {
@@ -469,34 +510,39 @@ export class Start extends Phaser.Scene {
       saveDoctrineSnapshotToStorage(this.sim.exportDoctrineSnapshot());
     }
 
-    // UI
-    const sel = this.units.getSelectedUnit();
-    const buildType = this.build.getSelectedBuildType();
+    // UI (throttled to reduce per-frame string allocations/layout churn)
+    this._hudAccumMs += dt;
+    if (this._hudAccumMs >= this._hudUpdateMs) {
+      this._hudAccumMs = 0;
 
-    const res = this.sim.getResources();
-    const per = this.sim.state.perMin;
+      const sel = this.units.getSelectedUnit();
+      const buildType = this.build.getSelectedBuildType();
 
-    const cities = this.sim.getCities();
-    const routes = this.sim.state.trade.routes.length;
+      const res = this.sim.getResources();
+      const per = this.sim.state.perMin;
 
-    const mode = this.routeMode.active
-      ? `маршрут: ${this.routeMode.mode}${this.routeMode.srcCityId ? ' (источник выбран)' : ''}`
-      : (this.demolishMode ? 'СНОС' : (buildType ? `строю: ${buildType.name}` : 'выбор'));
+      const cities = this.sim.getCities();
+      const routes = this.sim.state.trade.routes.length;
 
-    this.ui.setPlayerText([
-      `seed=${this.cfg.worldSeed}`,
-      `spawn=${this.spawn.x},${this.spawn.y}`,
-      `cities=${cities.length}  routes=${routes}`,
-      `selected=${sel ? `${sel.name} @ ${sel.tx},${sel.ty}` : "—"}`,
-      `mode=${mode}`,
-      `gold=${res.gold.toFixed(1)}  (+${per.gold.toFixed(2)}/min)`,
-      `wood=${res.wood.toFixed(1)} (+${per.wood.toFixed(2)}/min)  metal=${res.metal.toFixed(1)} (+${per.metal.toFixed(2)}/min)`,
-      `marble=${res.marble.toFixed(1)} (+${per.marble.toFixed(2)}/min)  glass=${res.glass.toFixed(1)} (+${per.glass.toFixed(2)}/min)`,
-      `powder=${res.powder.toFixed(1)} (+${per.powder.toFixed(2)}/min)  research=${(res.research ?? 0).toFixed(1)} (+${per.research.toFixed(2)}/min)`,
-      `trade_income=${this.sim.state.trade.goldPerMin.toFixed(2)}/min`,
-      `cheats=${this.sim.isInfiniteResources() ? '∞' : '—'}`,
-      `doctrines=${(this.sim.state.doctrineLoadout?.selectedDoctrineIds ?? []).join(', ') || '—'}`,
-      `chunks=${this.chunkMgr.getLoadedCount?.() ?? "?"}`,
-    ]);
+      const mode = this.routeMode.active
+        ? `маршрут: ${this.routeMode.mode}${this.routeMode.srcCityId ? ' (источник выбран)' : ''}`
+        : (this.demolishMode ? 'СНОС' : (buildType ? `строю: ${buildType.name}` : 'выбор'));
+
+      this.ui.setPlayerText([
+        `seed=${this.cfg.worldSeed}`,
+        `spawn=${this.spawn.x},${this.spawn.y}`,
+        `cities=${cities.length}  routes=${routes}`,
+        `selected=${sel ? `${sel.name} @ ${sel.tx},${sel.ty}` : "—"}`,
+        `mode=${mode}`,
+        `gold=${res.gold.toFixed(1)}  (+${per.gold.toFixed(2)}/min)`,
+        `wood=${res.wood.toFixed(1)} (+${per.wood.toFixed(2)}/min)  metal=${res.metal.toFixed(1)} (+${per.metal.toFixed(2)}/min)`,
+        `marble=${res.marble.toFixed(1)} (+${per.marble.toFixed(2)}/min)  glass=${res.glass.toFixed(1)} (+${per.glass.toFixed(2)}/min)`,
+        `powder=${res.powder.toFixed(1)} (+${per.powder.toFixed(2)}/min)  research=${(res.research ?? 0).toFixed(1)} (+${per.research.toFixed(2)}/min)`,
+        `trade_income=${this.sim.state.trade.goldPerMin.toFixed(2)}/min`,
+        `cheats=${this.sim.isInfiniteResources() ? '∞' : '—'}`,
+        `doctrines=${(this.sim.state.doctrineLoadout?.selectedDoctrineIds ?? []).join(', ') || '—'}`,
+        `chunks=${this.chunkMgr.getLoadedCount?.() ?? "?"}`,
+      ]);
+    }
   }
 }
