@@ -81,7 +81,7 @@ export function loadSpawnRegistry() {
 
 export function addSpawnToRegistry(p) {
   const arr = loadSpawnRegistry();
-  arr.push({ x: p.x, y: p.y, t: Date.now() });
+  arr.push({ x: p.x, y: p.y, t: Date.now(), w: Number.isFinite(p.w) ? (p.w >>> 0) : undefined });
   try { localStorage.setItem(LS_KEY, JSON.stringify(arr)); } catch {}
 }
 
