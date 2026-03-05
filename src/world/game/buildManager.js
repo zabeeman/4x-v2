@@ -1,7 +1,7 @@
 // src/world/game/buildManager.js
 
 export class BuildManager {
-  constructor(scene, infiniteCfg, gameCfg, fog, sim) {
+  constructor(scene, infiniteCfg, gameCfg, fog, sim, coordinateService = null) {
     this.scene = scene;
     this.infiniteCfg = infiniteCfg;
     this.gameCfg = gameCfg;
@@ -9,6 +9,14 @@ export class BuildManager {
     this.sim = sim;
 
     this.tileSize = infiniteCfg.tileSize;
+    this.coords = coordinateService;
+
+    // Match iso tile rhombus dimensions under viewMode transform (rotate 45° + scaleY 0.5).
+    // For a square side S: final width = S*sqrt(2), final height = S*sqrt(2)/2.
+    // So S must be tileW/sqrt(2) to align ghost with iso tile plane/size.
+    const ghostSize = Number.isFinite(this.coords?.tileW)
+      ? (this.coords.tileW / Math.SQRT2)
+      : this.tileSize;
 
     this.buildings = []; // visuals: { id,typeId, tx,ty, sprite }
     this.selectedBuildTypeId = null;
@@ -16,7 +24,7 @@ export class BuildManager {
     this.spawn = null; // {x,y}
 
     // Ghost
-    this.ghost = this.scene.add.rectangle(0, 0, this.tileSize, this.tileSize, 0xffffff, 0.25)
+    this.ghost = this.scene.add.rectangle(0, 0, ghostSize, ghostSize, 0xffffff, 0.25)
       .setStrokeStyle(2, 0xffffff, 0.35)
       .setDepth(1500)
       .setVisible(false);
@@ -72,8 +80,9 @@ export class BuildManager {
   }
 
   updateGhost(seed, worldX, worldY) {
-    const tx = Math.floor(worldX / this.tileSize);
-    const ty = Math.floor(worldY / this.tileSize);
+    const tile = this.coords?.worldToTile ? this.coords.worldToTile(worldX, worldY) : { tx: Math.floor(worldX / this.tileSize), ty: Math.floor(worldY / this.tileSize) };
+    const tx = tile.tx;
+    const ty = tile.ty;
     this.updateGhostAtTile(seed, tx, ty);
   }
 
@@ -82,9 +91,8 @@ export class BuildManager {
     const type = this.getSelectedBuildType();
     if (!type) { this.ghost.setVisible(false); return; }
 
-    const x = (tx + 0.5) * this.tileSize;
-    const y = (ty + 0.5) * this.tileSize;
-    this.ghost.setPosition(x, y).setVisible(true);
+    const anchor = this.coords?.tileToWorldAnchor ? this.coords.tileToWorldAnchor(tx, ty) : { wx: (tx + 0.5) * this.tileSize, wy: (ty + 0.5) * this.tileSize };
+    this.ghost.setPosition(anchor.wx, anchor.wy).setVisible(true);
 
     const chk = this.isValidBuildTile(seed, tx, ty);
     this._valid = !!chk.ok;
@@ -128,8 +136,9 @@ export class BuildManager {
     }
 
     // Visual
-    const x = (tx + 0.5) * this.tileSize;
-    const y = (ty + 0.5) * this.tileSize;
+    const anchor = this.coords?.tileToWorldAnchor ? this.coords.tileToWorldAnchor(tx, ty) : { wx: (tx + 0.5) * this.tileSize, wy: (ty + 0.5) * this.tileSize };
+    const x = anchor.wx;
+    const y = anchor.wy;
 
     // Color by district/city id (deterministic hash) for quick visibility
     let color = 0x073b4c;
