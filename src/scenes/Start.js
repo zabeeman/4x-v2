@@ -15,6 +15,7 @@ import { GameSim } from "../world/game/sim/gameSim.js";
 
 import { OverlayManager } from "../world/game/overlay/overlayManager.js";
 import { RouteRenderer } from "../world/game/overlay/routeRenderer.js";
+import { createViewModeController } from "../world/render/viewModeController.js";
 
 function parseSeedFromUrlOrDefault(def) {
   const qs = new URLSearchParams(window.location.search);
@@ -135,6 +136,13 @@ export class Start extends Phaser.Scene {
     this.ui = new UIManager(this, this.cfg, this.gcfg);
     this.ui.create();
 
+    this.viewModeCtl = createViewModeController(this, {
+      isoYScale: 0.5,
+      tileSize: this.cfg.tileSize,
+      chunkSize: this.cfg.chunkSize,
+    });
+    this.cameraCtl?.setViewMapper?.(this.viewModeCtl);
+
     // Build palette
     const catalogue = this.sim.getCatalogue();
     this.ui.buildButtonsFromCatalogue(catalogue, (id) => {
@@ -224,6 +232,12 @@ export class Start extends Phaser.Scene {
       this.sim.setInfiniteResources(flag);
     });
 
+    this.ui.setViewModeHandler(() => {
+      const mode = this.viewModeCtl.toggleMode();
+      this.ui.setViewMode(mode);
+    });
+    this.ui.setViewMode(this.viewModeCtl.getMode());
+
     // Manual trade routes
     this.routeMode = { active: false, mode: 'land', srcCityId: null, hoverCityId: null };
     this.ui.setTradeRouteHandlers({
@@ -245,7 +259,8 @@ export class Start extends Phaser.Scene {
     // Pointer interactions
     this.input.on("pointermove", (pointer) => {
       if (this.ui.isPointerOverUI(pointer)) return;
-      const p = pointer.positionToCamera(this.cameras.main);
+      const pCam = pointer.positionToCamera(this.cameras.main);
+      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
       const tx = Math.floor(p.x / this.cfg.tileSize);
       const ty = Math.floor(p.y / this.cfg.tileSize);
 
@@ -274,7 +289,8 @@ export class Start extends Phaser.Scene {
       if (!pointer.leftButtonDown()) return;
       if (this.ui.isPointerOverUI(pointer)) return;
 
-      const p = pointer.positionToCamera(this.cameras.main);
+      const pCam = pointer.positionToCamera(this.cameras.main);
+      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
       const tx = Math.floor(p.x / this.cfg.tileSize);
       const ty = Math.floor(p.y / this.cfg.tileSize);
 
@@ -355,6 +371,11 @@ export class Start extends Phaser.Scene {
       this.build.setSelectedBuildType(null);
       this.ui.setSelectedBuilding(null);
       this.overlays.setPlacementType(null);
+    });
+
+    this.input.keyboard.on("keydown-V", () => {
+      const mode = this.viewModeCtl.toggleMode();
+      this.ui.setViewMode(mode);
     });
 
     this.input.keyboard.on("keydown-C", (ev) => {
@@ -453,6 +474,7 @@ export class Start extends Phaser.Scene {
 
     this.cameraCtl.update();
     this.chunkMgr.update();
+    this.viewModeCtl?.update();
     this.fog.update();
     this.build.updateVisibilityByFog();
     this.units.updateVisibilityByFog();
