@@ -37,6 +37,8 @@ export function createFreeCameraController(scene, opts = {}) {
 
   if (scene.input.mouse) scene.input.mouse.disableContextMenu();
 
+  let viewMapper = null;
+
   // -------- focus handling --------
   /** @type {{x:number,y:number}|null} */
   let focus = null;
@@ -60,6 +62,11 @@ export function createFreeCameraController(scene, opts = {}) {
 
   function setFocus(x, y) {
     focus = snapToGrid(x, y);
+  }
+
+  function mapViewDeltaToWorld(dx, dy) {
+    if (!viewMapper?.viewDeltaToWorldDelta) return { x: dx, y: dy };
+    return viewMapper.viewDeltaToWorldDelta(dx, dy);
   }
 
   function clearFocus() {
@@ -95,8 +102,9 @@ export function createFreeCameraController(scene, opts = {}) {
     const dx = pointer.x - lastX;
     const dy = pointer.y - lastY;
 
-    cam.scrollX -= dx / cam.zoom;
-    cam.scrollY -= dy / cam.zoom;
+    const wd = mapViewDeltaToWorld(dx / cam.zoom, dy / cam.zoom);
+    cam.scrollX -= wd.x;
+    cam.scrollY -= wd.y;
 
     lastX = pointer.x;
     lastY = pointer.y;
@@ -176,13 +184,19 @@ export function createFreeCameraController(scene, opts = {}) {
 
       const len = Math.hypot(mx, my) || 1;
       const speed = cfg.panSpeed / cam.zoom;
-      cam.scrollX += (mx / len) * speed;
-      cam.scrollY += (my / len) * speed;
+      const sdx = (mx / len) * speed;
+      const sdy = (my / len) * speed;
+      const wd = mapViewDeltaToWorld(sdx, sdy);
+      cam.scrollX += wd.x;
+      cam.scrollY += wd.y;
     },
     setFocus,
     clearFocus,
     getFocus() {
       return focus ? { ...focus } : null;
+    },
+    setViewMapper(mapper) {
+      viewMapper = mapper ?? null;
     },
   };
 }
