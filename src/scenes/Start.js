@@ -137,9 +137,8 @@ export class Start extends Phaser.Scene {
     this.ui.create();
 
     this.viewModeCtl = createViewModeController(this, {
-      isoScaleY: 0.56,
-      isoAngleDeg: -45,
-      isoZoomMul: 0.92,
+      isoYScale: 0.5,
+      worldScale: 1,
     });
 
     // Build palette
@@ -258,7 +257,8 @@ export class Start extends Phaser.Scene {
     // Pointer interactions
     this.input.on("pointermove", (pointer) => {
       if (this.ui.isPointerOverUI(pointer)) return;
-      const p = pointer.positionToCamera(this.cameras.main);
+      const pCam = pointer.positionToCamera(this.cameras.main);
+      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
       const tx = Math.floor(p.x / this.cfg.tileSize);
       const ty = Math.floor(p.y / this.cfg.tileSize);
 
@@ -287,7 +287,8 @@ export class Start extends Phaser.Scene {
       if (!pointer.leftButtonDown()) return;
       if (this.ui.isPointerOverUI(pointer)) return;
 
-      const p = pointer.positionToCamera(this.cameras.main);
+      const pCam = pointer.positionToCamera(this.cameras.main);
+      const p = this.viewModeCtl.viewToWorld(pCam.x, pCam.y);
       const tx = Math.floor(p.x / this.cfg.tileSize);
       const ty = Math.floor(p.y / this.cfg.tileSize);
 
@@ -472,6 +473,7 @@ export class Start extends Phaser.Scene {
     this.cameraCtl.update();
     this.viewModeCtl?.update();
     this.chunkMgr.update();
+    this.viewModeCtl?.update();
     this.fog.update();
     this.build.updateVisibilityByFog();
     this.units.updateVisibilityByFog();
