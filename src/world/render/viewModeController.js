@@ -21,7 +21,7 @@ export function createViewModeController(scene, opts = {}) {
   }
 
   function isDynamicChunkTextureKey(key) {
-    return /^(wave|fog|buildarea|place|district|influence)_/.test(key);
+    return /^(wave|fog)_/.test(key);
   }
 
   function parseChunkKey(key) {
@@ -88,10 +88,12 @@ export function createViewModeController(scene, opts = {}) {
     const isoW = chunkSize * tileW;
     const isoH = chunkSize * tileH;
 
-    if (scene.textures.exists(isoKey)) scene.textures.remove(isoKey);
-    const isoTex = scene.textures.createCanvas(isoKey, isoW, isoH);
+    const isoTex = scene.textures.exists(isoKey)
+      ? scene.textures.get(isoKey)
+      : scene.textures.createCanvas(isoKey, isoW, isoH);
     const ctx = isoTex.getContext();
     ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, isoW, isoH);
 
     const xOffset = (chunkSize - 1) * halfW;
