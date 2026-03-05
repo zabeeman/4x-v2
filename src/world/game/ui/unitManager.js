@@ -73,6 +73,16 @@ export class UnitManager {
     // no-op while movement disabled
   }
 
+  refreshProjection() {
+    for (const u of this.units) {
+      const w = this.tileToWorldCenter(u.tx, u.ty);
+      u.x = w.x;
+      u.y = w.y;
+      u.sprite.setPosition(w.x, w.y);
+      u.sprite.setDepth(Math.floor(w.y) + 1200);
+    }
+  }
+
   destroy() {
     for (const u of this.units) {
       u.sprite.destroy();

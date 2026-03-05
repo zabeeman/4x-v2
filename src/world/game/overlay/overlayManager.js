@@ -119,6 +119,12 @@ export class OverlayManager {
     }
   }
 
+  refreshProjection() {
+    for (const c of Array.from(this._district.values())) this._unloadChunk(c.cx, c.cy);
+    this._queue.length = 0;
+    this._queued.clear();
+  }
+
   destroy() {
     for (const c of this._district.values()) {
       c.img.destroy();
