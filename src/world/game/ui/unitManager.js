@@ -1,3 +1,5 @@
+import { tileToWorldCenter } from "../../render/renderSpace.js";
+
 // src/world/game/ui/unitManager.js
 
 export class UnitManager {
@@ -17,10 +19,7 @@ export class UnitManager {
   }
 
   tileToWorldCenter(tx, ty) {
-    return {
-      x: (tx + 0.5) * this.tileSize,
-      y: (ty + 0.5) * this.tileSize,
-    };
+    return tileToWorldCenter(tx, ty, this.infiniteCfg);
   }
 
   addUnitAtTile(tx, ty, opts = {}) {
@@ -28,7 +27,7 @@ export class UnitManager {
     const w = this.tileToWorldCenter(tx, ty);
 
     const r = this.tileSize * 0.38;
-    const g = this.scene.add.circle(w.x, w.y, r, 0xffd166, 1).setDepth(1200);
+    const g = this.scene.add.circle(w.x, w.y, r, 0xffd166, 1).setDepth(Math.floor(w.y) + 1200);
     g.setStrokeStyle(2, 0x000000, 0.35);
 
     // interactive selection
