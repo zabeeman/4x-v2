@@ -1,4 +1,5 @@
 import { createCoordinateService } from './coordinateService.js';
+import { ChunkTextureLRU } from '../../render/ChunkTextureLRU.js';
 
 export function createViewModeController(scene, opts = {}) {
   const camera = scene.cameras.main;
@@ -15,13 +16,14 @@ export function createViewModeController(scene, opts = {}) {
 
   const baseState = new WeakMap();
   const isoTextureCache = new Map();
+  const isoTextureLRU = new ChunkTextureLRU(scene, { limit: 64 });
 
   let mode = 'topdown';
   let originX = 0;
   let originY = 0;
 
   function isChunkTextureKey(key) {
-    return /^(chunk|wave|fog|buildarea|place|district|influence)_-?\d+_-?\d+$/.test(key);
+    return /^(chunk|wave|fog|buildarea|place|district|influence)_(?:-?\d+_){1,3}-?\d+$/.test(key);
   }
 
   function isDynamicChunkTextureKey(key) {
@@ -38,9 +40,13 @@ export function createViewModeController(scene, opts = {}) {
   }
 
   function parseChunkKey(key) {
-    const m = key.match(/^([a-z]+)_(-?\d+)_(-?\d+)$/);
-    if (!m) return null;
-    return { kind: m[1], cx: Number(m[2]), cy: Number(m[3]) };
+    const parts = key.split('_');
+    if (parts.length < 3) return null;
+    const kind = parts[0];
+    const cx = Number(parts[parts.length - 2]);
+    const cy = Number(parts[parts.length - 1]);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+    return { kind, cx, cy };
   }
 
   function gridToScreen(gx, gy) {
@@ -159,6 +165,7 @@ export function createViewModeController(scene, opts = {}) {
 
     isoTex.refresh();
     isoTextureCache.set(srcKey, { isoKey });
+    isoTextureLRU.touch(isoKey, { textureKey: isoKey });
     return isoKey;
   }
 
@@ -303,6 +310,10 @@ export function createViewModeController(scene, opts = {}) {
     originY = worldCY - (gx + gy) * halfH;
   }
 
+  function getIsoOrigin() {
+    return { x: originX, y: originY };
+  }
+
   function setMode(nextMode) {
     const normalized = nextMode === 'isometric' ? 'isometric' : 'topdown';
     if (normalized === mode) return;
@@ -328,6 +339,10 @@ export function createViewModeController(scene, opts = {}) {
     applyAll();
   }
 
+  scene.events.once('shutdown', () => {
+    isoTextureLRU.clear();
+  });
+
   return {
     setMode,
     toggleMode() {
@@ -346,6 +361,9 @@ export function createViewModeController(scene, opts = {}) {
     worldToTile: coords.worldToTile,
     tileToWorldAnchor: coords.tileToWorldAnchor,
     tileToIsoScreen: coords.tileToIsoScreen,
+    getIsoOrigin,
+    tileW,
+    tileH,
     update,
   };
 }
