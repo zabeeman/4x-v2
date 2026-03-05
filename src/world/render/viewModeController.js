@@ -1,3 +1,5 @@
+import { createCoordinateService } from './coordinateService.js';
+
 export function createViewModeController(scene, opts = {}) {
   const camera = scene.cameras.main;
 
@@ -8,6 +10,8 @@ export function createViewModeController(scene, opts = {}) {
   const tileH = Number.isFinite(opts.tileH) ? opts.tileH : tileW / 2;
   const halfW = tileW / 2;
   const halfH = tileH / 2;
+
+  const coords = createCoordinateService(scene, { tileSize, tileW, tileH });
 
   const baseState = new WeakMap();
   const isoTextureCache = new Map();
@@ -55,30 +59,34 @@ export function createViewModeController(scene, opts = {}) {
 
   function worldToView(x, y) {
     if (mode !== 'isometric') return { x, y };
-    const gx = x / tileSize;
-    const gy = y / tileSize;
-    return gridToScreen(gx, gy);
+    const iso = coords.worldToIsoScreen(x, y);
+    return { x: iso.sx, y: iso.sy };
   }
 
   function viewToWorld(x, y) {
     if (mode !== 'isometric') return { x, y };
-    const g = screenToGrid(x, y);
-    return { x: g.x * tileSize, y: g.y * tileSize };
+    const w = coords.isoScreenToWorld(x, y);
+    return { x: w.wx, y: w.wy };
+  }
+
+
+  function screenToWorld(px, py) {
+    const view = coords.screenToWorld(px, py);
+    return viewToWorld(view.x, view.y);
   }
 
   function viewToTile(sx, sy) {
-    if (mode !== 'isometric') {
-      return { tx: Math.floor(sx / tileSize), ty: Math.floor(sy / tileSize) };
-    }
-    const g = screenToGrid(sx, sy);
-    return { tx: Math.floor(g.x), ty: Math.floor(g.y) };
+    const world = viewToWorld(sx, sy);
+    return coords.worldToTile(world.x, world.y);
   }
 
   function tileToView(tx, ty) {
     if (mode !== 'isometric') {
-      return { x: (tx + 0.5) * tileSize, y: (ty + 0.5) * tileSize };
+      const anchor = coords.tileToWorldAnchor(tx, ty);
+      return { x: anchor.wx, y: anchor.wy };
     }
-    return gridToScreen(tx + 0.5, ty + 0.5);
+    const iso = coords.tileToIsoScreen(tx, ty);
+    return { x: iso.sx, y: iso.sy };
   }
 
   function remember(obj) {
@@ -313,6 +321,10 @@ export function createViewModeController(scene, opts = {}) {
     viewToTile,
     tileToView,
     viewDeltaToWorldDelta,
+    screenToWorld,
+    worldToTile: coords.worldToTile,
+    tileToWorldAnchor: coords.tileToWorldAnchor,
+    tileToIsoScreen: coords.tileToIsoScreen,
     update,
   };
 }
