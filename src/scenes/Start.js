@@ -421,7 +421,7 @@ export class Start extends Phaser.Scene {
     this.build.setSpawnTile(spawn);
     this.sim.setSpawn(spawn.x, spawn.y);
 
-    this.fog.revealCircle(spawn.x, spawn.y, this.gcfg.fog.startRevealRadiusTiles);
+    this.fog.discoverCircle(spawn.x, spawn.y, this.gcfg.fog.startRevealRadiusTiles);
 
     const u = this.units.addUnitAtTile(spawn.x, spawn.y, { name: "Разведчик" });
     this.units.selectUnit(u.id);
@@ -454,6 +454,8 @@ export class Start extends Phaser.Scene {
     this.cameraCtl.update();
     this.chunkMgr.update();
     this.fog.update();
+    this.build.updateVisibilityByFog();
+    this.units.updateVisibilityByFog();
 
     // sim
     this.sim.update(dt);
