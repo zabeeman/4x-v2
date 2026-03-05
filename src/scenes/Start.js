@@ -470,6 +470,7 @@ export class Start extends Phaser.Scene {
     if (!this.sim) return;
 
     this.cameraCtl.update();
+    this.viewModeCtl?.update();
     this.chunkMgr.update();
     this.viewModeCtl?.update();
     this.fog.update();
