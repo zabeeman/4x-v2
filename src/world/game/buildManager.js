@@ -127,6 +127,7 @@ export class BuildManager {
       typeId: type.id,
       tx, ty,
       sprite: spr,
+      visionSourceId: `building_${placed?.id ?? `${type.id}_${tx}_${ty}`}`,
     };
     this.buildings.push(bVis);
 
@@ -142,6 +143,7 @@ export class BuildManager {
     // remove visual
     const idx = this.buildings.findIndex(b => b.tx === tx && b.ty === ty);
     if (idx >= 0) {
+      if (this.fog) this.fog.removeVisionSource(this.buildings[idx].visionSourceId);
       this.buildings[idx].sprite.destroy();
       this.buildings.splice(idx, 1);
     }
