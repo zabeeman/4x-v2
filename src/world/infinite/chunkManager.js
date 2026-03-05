@@ -122,7 +122,7 @@ export function createChunkManager(scene, cfg, palette) {
   }
 
   function createChunkTexture(cx, cy) {
-    const texKey = `chunk_${cx}_${cy}`;
+    const texKey = `chunk_${cfg.worldSeed}_${cfg.chunkGenVersion ?? 1}_${cx}_${cy}`;
     const tex = scene.textures.createCanvas(texKey, chunkPx, chunkPx);
     const ctx = tex.getContext();
     ctx.imageSmoothingEnabled = false;
@@ -389,7 +389,7 @@ const img = scene.add.image(cx * chunkPx, cy * chunkPx, texKey).setOrigin(0, 0).
 // --- Wave overlay texture (animated) ---
 let wave = null;
 if (waterWaves && shore_lx.length > 0) {
-  const waveKey = `wave_${cx}_${cy}`;
+  const waveKey = `wave_${cfg.worldSeed}_${cfg.chunkGenVersion ?? 1}_${cx}_${cy}`;
   const wtex = scene.textures.createCanvas(waveKey, chunkPx, chunkPx);
   const wctx = wtex.getContext();
   wctx.imageSmoothingEnabled = false;

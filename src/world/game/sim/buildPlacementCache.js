@@ -250,6 +250,7 @@ export class BuildPlacementCache {
     this.dirtyChunks = new Set();
     this.ruleSetCache = new Map();
     this.extractorCache = new Map();
+    this.placementChunkIndex = new Map();
   }
 
   warmup() {
@@ -397,6 +398,7 @@ export class BuildPlacementCache {
     this.workStamp++;
     this.ruleSetCache.clear();
     this.extractorCache.clear();
+    this.placementChunkIndex.clear();
 
     let inWorkTiles = 0;
     for (const c of this.workChunks.values()) {
@@ -463,6 +465,7 @@ export class BuildPlacementCache {
     this.workStamp++;
     this.ruleSetCache.clear();
     this.extractorCache.clear();
+    this.placementChunkIndex.clear();
   }
 
   rebuildBaseMasksFull() {
@@ -470,6 +473,7 @@ export class BuildPlacementCache {
     this.baseStamp++;
     this.ruleSetCache.clear();
     this.extractorCache.clear();
+    this.placementChunkIndex.clear();
     this.dirtyChunks.clear();
   }
 
@@ -483,6 +487,7 @@ export class BuildPlacementCache {
     this.baseStamp++;
     this.ruleSetCache.clear();
     this.extractorCache.clear();
+    this.placementChunkIndex.clear();
   }
 
   _rebuildChunkBase(c) {
@@ -579,9 +584,19 @@ export class BuildPlacementCache {
     const cx = floorDiv(x, this.chunkSize);
     const cy = floorDiv(y, this.chunkSize);
     const idx = (y - cy * this.chunkSize) * this.chunkSize + (x - cx * this.chunkSize);
-    const mask = this.getPlacementMask(buildingId);
-    const chunk = mask.find((m) => m.cx === cx && m.cy === cy);
-    if (!chunk) return false;
-    return testBit(chunk.bitset4096, idx);
+
+    const cacheKey = String(buildingId);
+    let cache = this.placementChunkIndex.get(cacheKey);
+    if (!cache || cache.baseStamp !== this.baseStamp || cache.workStamp !== this.workStamp) {
+      const chunkMap = new Map();
+      const mask = this.getPlacementMask(buildingId);
+      for (const m of mask) chunkMap.set(`${m.cx},${m.cy}`, m.bitset4096);
+      cache = { baseStamp: this.baseStamp, workStamp: this.workStamp, chunkMap };
+      this.placementChunkIndex.set(cacheKey, cache);
+    }
+
+    const bits = cache.chunkMap.get(`${cx},${cy}`);
+    if (!bits) return false;
+    return testBit(bits, idx);
   }
 }
